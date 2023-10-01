@@ -1,0 +1,52 @@
+ TOPAZ SOFTWARE: TOPOGRAPHIC PARAMETERIZATION SOFTWARE SYSTEM                  
+ PROGRAM RASPRO: RASTER PROCESSING PROGRAM                                     
+                 VERSION 3.10, APRIL 1999                                      
+
+ J. GARBRECHT, USDA-ARS, EL RENO, OKLAHOMA, USA.                               
+ L. MARTZ, UNIVERSITY OF SASKATCHEWAN, SASKATOON, CANADA.                      
+
+
+ TITLE OF CURRENT TOPAZ APPLICATION:
+
+  DATE: 23 AUGUST 1999     WEPP WEB INTERFACE   DEDNM VERSION 3.1              
+  APPLICATION FOR TESTING AND VERIFICATION WEPP WEB GIS; INPUT FILE            
+  TESTING AND CALIBRATION.                                                     
+
+
+
+ TABLE OF ELEVATION CLASS CHARACTERISTICS AS COMPUTED BY PROGRAM RASPRO
+
+
+        CLASS       BEGINNING VALUE   MEAN VALUE
+        NUMBER          OF CLASS       OF CLASS
+          1               262.3           274.1
+          2               285.9           297.7
+          3               309.5           321.3
+          4               333.0           344.8
+          5               356.6           368.4
+          6               380.2           392.0
+          7               403.8           415.6
+          8               427.4           439.2
+          9               450.9           462.7
+         10               474.5           486.3
+         11               498.1           509.9
+         12               521.7           533.5
+         13               545.3           557.1
+         14               568.8           580.6
+         15               592.4           604.2
+         16               616.0           627.8
+         17               639.6           651.4
+         18               663.2           675.0
+         19               686.7           698.5
+         20               710.3           722.1
+         21               733.9           745.7
+         22               757.5           769.3
+         23               781.1           792.9
+         24               804.6           816.4
+         25               828.2           840.0
+         26               851.8           863.6
+         27               875.4           887.2
+         28               899.0           910.8
+         29               922.5           934.3
+         30               946.1           957.9
+                          969.7
