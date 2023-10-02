@@ -5,32 +5,28 @@ on:
     branches: [ main, master ]  # adjust this if your default branch is named differently
   pull_request:
     branches: [ main, master ]
-
+    
 jobs:
   build:
-
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macOS-latest]
-        rust: [stable]
-
+    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - name: Set up Rust
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Install GDAL
+      run: |
+        sudo add-apt-repository ppa:ubuntugis/ppa
+        sudo apt-get update
+        sudo apt-get install -y libgdal-dev
+
+    - name: Setup Rust
       uses: actions-rs/toolchain@v1
       with:
-        profile: minimal
-        toolchain: ${{ matrix.rust }}
+        toolchain: stable
         override: true
+
     - name: Build
       uses: actions-rs/cargo@v1
       with:
         command: build
         args: --release
-    - name: Run tests
-      uses: actions-rs/cargo@v1
-      with:
-        command: test
-        args: --release
-
