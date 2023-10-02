@@ -6,6 +6,8 @@ use core::any::Any;
 
 use gdal::errors::GdalError;
 use gdal::raster::GdalType;
+use gdal::spatial_ref::SpatialRef;
+
 use std::str::FromStr;
 
 use crate::support::circmean;
@@ -215,11 +217,15 @@ impl<T: GdalType + Default + Copy + FromF64> Raster<T> {
         let geo_transform = dataset.geo_transform()?;
         let cellsize = geo_transform[1];
 
-        let spatial_ref_result = dataset.spatial_ref();
-        let proj4 = match spatial_ref_result {
-            Ok(sr) => sr.to_proj4().ok(),
-            Err(_) => None,
-        };
+        let wkt = dataset.projection();
+        let spatial_ref = SpatialRef::from_wkt(&wkt).unwrap();
+        let proj4 = spatial_ref.to_proj4().ok();
+
+        //let spatial_ref_result = dataset.spatial_ref();
+        //let proj4 = match spatial_ref_result {
+        //    Ok(sr) => sr.to_proj4().ok(),
+        //    Err(_) => None,
+        //};
 
         let band = dataset.rasterband(1)?;
         let buffer = band.read_as::<T>((0, 0), (width, height), (width, height), None)?;
