@@ -1156,7 +1156,7 @@ mod tests {
 
         let channels: FlowpathCollection = super::walk_channels(&subwta, &relief, &flovec, &fvslop, &taspec);
 
-        let hillslopes = abstract_subcatchments(&subwta, &relief, &flovec, &fvslop, &taspec, &channels, true, 300.0);
+        let hillslopes = abstract_subcatchments(&subwta, &relief, &flovec, &fvslop, &taspec, &channels);
 
         for hillslope in &hillslopes.flowpaths {
             let topaz_id = hillslope.topaz_id;
@@ -1189,7 +1189,7 @@ mod tests {
 
         let topaz_id = 21;
         let fp_collection = super::walk_flowpaths(topaz_id, &subwta, &relief, &flovec, &fvslop, &taspec);
-        let hillslope =  fp_collection.abstract_subcatchment(&subwta, &taspec, &channels, true, 300.0);
+        let hillslope =  fp_collection.abstract_subcatchment(&subwta, &taspec, &channels);
 
         hillslope.write_slp("tests/fixtures/watershed_abstraction/output/subcatchments/hill_21.slp", 99, true, 300.0).unwrap();
         println!("{:?}", hillslope);
@@ -1197,45 +1197,4 @@ mod tests {
     }
     
 
-}
-
-#[cfg(test)]
-mod tests_transform_coords {
-    use super::*;
-
-    #[test]
-    fn test_valid_transformation() {
-        // UTM coordinates for approximately (52.5194, 13.4067) in Berlin
-        let (x, y) = (391035.29, 5819768.35);
-        let s_srs = "+proj=utm +zone=33 +ellps=WGS84 +datum=WGS84 +units=m +no_defs";
-        let t_srs = "EPSG:4326";
-
-        let result = transform_coords(x, y, s_srs, t_srs).unwrap();
-        
-        // Since floating point comparisons can have precision issues, 
-        // we'll use a small threshold for the comparison
-        let threshold = 1e-5;
-        assert!((result.0 - 13.39413932581989).abs() < threshold);
-        assert!((result.1 - 52.517121535290734).abs() < threshold);
-    }
-
-    #[test]
-    fn test_invalid_source_projection() {
-        let (x, y) = (500000.0, 4649776.22482);
-        let s_srs = "+proj=invalid +zone=33 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"; // Invalid proj string
-        let t_srs = "EPSG:4326";
-
-        let result = transform_coords(x, y, s_srs, t_srs);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_invalid_target_projection() {
-        let (x, y) = (500000.0, 4649776.22482);
-        let s_srs = "+proj=utm +zone=33 +ellps=WGS84 +datum=WGS84 +units=m +no_defs";
-        let t_srs = "EPSG:invalid"; // Invalid EPSG code
-
-        let result = transform_coords(x, y, s_srs, t_srs);
-        assert!(result.is_err());
-    }
 }

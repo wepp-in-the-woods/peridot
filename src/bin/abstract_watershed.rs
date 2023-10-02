@@ -4,7 +4,7 @@ use gdal::errors::GdalError;
 use rayon::ThreadPoolBuilder;
 use clap::Parser;
 
-use watershed_abstraction::watershed_abstraction::abstract_watershed;
+use peridot::watershed_abstraction::abstract_watershed;
 
 #[derive(Parser)]
 struct Opts {
