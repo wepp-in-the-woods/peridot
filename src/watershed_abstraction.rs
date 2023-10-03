@@ -37,7 +37,6 @@ pub fn abstract_watershed(wd: &str, max_points: usize, clip_hillslopes: bool, cl
     }
 
     let _ = std::fs::create_dir_all(Path::new("watershed").join("slope_files"));
-    let _ = std::fs::create_dir_all(Path::new("watershed").join("slope_files/channels"));
     let _ = std::fs::create_dir_all(Path::new("watershed").join("slope_files/hillslopes"));
     let _ = std::fs::create_dir_all(Path::new("watershed").join("slope_files/flowpaths"));
 
@@ -52,7 +51,7 @@ pub fn abstract_watershed(wd: &str, max_points: usize, clip_hillslopes: bool, cl
     let hillslopes: FlowpathCollection = abstract_subcatchments(&subwta, &relief, &flovec, &fvslop, &taspec, &channels);
 
     let tasks: Vec<Box<dyn FnOnce() -> Result<()> + Send>> = vec![
-        Box::new(|| channels.write_slps("watershed/slope_files/channels/", max_points, clip_hillslopes, clip_hillslope_length)),
+        Box::new(|| channels.write_channel_slp("watershed/slope_files/channels.slp", max_points, clip_hillslopes, clip_hillslope_length)),
         Box::new(|| channels.write_metadata_to_csv("watershed/channels.csv", &subwta.wgs_transform)),
         Box::new(|| hillslopes.write_slps("watershed/slope_files/hillslopes/", max_points, clip_hillslopes, clip_hillslope_length)),
         Box::new(|| hillslopes.write_metadata_to_csv("watershed/hillslopes.csv", &subwta.wgs_transform)),
@@ -271,7 +270,6 @@ impl FlowpathCollection {
             self.weighted_slope_average_from_fps();
 
         let longest_fp: &FlowPath = self.get_longest_fp();
-
         let centroid_px = subwta.centroid_of(&indices);
         
         assert!(distances.len() > 1, "distances {:?}", distances);
@@ -378,6 +376,69 @@ impl FlowpathCollection {
     }
     
     #[allow(dead_code)]
+    pub fn write_channel_slp(&self, path: &str, max_points: usize, clip_hillslopes: bool, clip_hillslope_length: f64) -> std::io::Result<()> {
+
+        let mut all_strings = Vec::new();
+        all_strings.push(format!("99.1\n{}\n", &self.flowpaths.len()));
+
+        for fp in &self.flowpaths {
+
+            let interpolated: (Vec<f64>, Vec<f64>);
+            let (d, s) = if (fp.distances_norm.len() > max_points) || (fp.slopes.len() == 1) {
+                interpolated = interpolate_slp(&fp.distances_norm, &fp.slopes, max_points).unwrap();
+                (&interpolated.0, &interpolated.1)
+            } else {
+                (&fp.distances_norm, &fp.slopes)
+            };
+
+            let npts: usize = d.len();
+        
+            // Build the defs string
+            let defs: Vec<String> = d.iter()
+                .zip(s.iter())
+                .map(|(&dist, &slope)| format!("{:.4}, {:.5}", dist, slope))
+                .collect();
+
+            let mut length = fp.length;
+            let cellsize = fp.cellsize;
+            let mut width = fp.cellsize;
+            let area = fp.area_m2();
+
+            if clip_hillslopes {
+                if length > clip_hillslope_length {
+                    length = clip_hillslope_length;
+                    width = area / length;
+                }
+            }
+
+            let px_width = width / cellsize;
+            /*
+            let mut px_width = width / cellsize;
+            if px_width > 3.0 {
+                px_width = 3.0;
+            }
+            else if px_width < 0.5 {
+                px_width = 3.0;
+            }
+            */
+    
+            let slp = format!(
+                "{} {}\n{} {}\n{} \n",
+                fp.aspect, px_width, npts, length, defs.join(" ")
+            );
+            all_strings.push(slp);
+        }
+        let contents = all_strings.join("");
+
+        // Write to file
+        let mut file = std::fs::File::create(path)?;
+        file.write_all(contents.as_bytes())?;
+    
+        Ok(())
+    }
+
+    
+    #[allow(dead_code)]
     pub fn write_slps(&self, out_dir: &str, max_points: usize, clip_hillslopes: bool, clip_hillslope_length: f64) -> std::io::Result<()> {
 
         let results: Vec<std::io::Result<()>> = self.flowpaths.par_iter()
@@ -417,6 +478,7 @@ impl FlowpathCollection {
             String::from("length"),
             String::from("width"),
             String::from("direction"),
+            String::from("aspect"),
             String::from("area"),
             String::from("elevation"),
             String::from("centroid_px"),
@@ -436,6 +498,7 @@ impl FlowpathCollection {
                 fp.length.to_string(),
                 fp.width.to_string(),
                 fp.direction.to_string(),
+                fp.aspect.to_string(),
                 (fp.area_m2() as i32).to_string(),
                 fp.elevation.to_string(),
                 fp.centroid_px.0.to_string(), 
@@ -462,6 +525,7 @@ impl FlowpathCollection {
             String::from("length"),
             String::from("width"),
             String::from("direction"),
+            String::from("aspect"),
             String::from("area"),
             String::from("elevation"),
             String::from("centroid_px"),
@@ -484,6 +548,7 @@ impl FlowpathCollection {
                         fp.length.to_string(),
                         fp.width.to_string(),
                         fp.direction.to_string(),
+                        fp.aspect.to_string(),
                         fp.area_m2().to_string(),
                         fp.elevation.to_string(),
                         fp.centroid_px.0.to_string(), 
