@@ -4,6 +4,7 @@ use crate::support::{
     compute_direction, 
     circmean, 
     interpolate_slp};
+use crate::netw::{read_netw_tab, ChannelNode, write_network};
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::path::Path;
@@ -46,13 +47,15 @@ pub fn abstract_watershed(wd: &str, max_points: usize, clip_hillslopes: bool, cl
     let fvslop: Raster<f64> = Raster::<f64>::read("dem/topaz/FVSLOP.ARC").unwrap();
     let taspec: Raster<f64> = Raster::<f64>::read("dem/topaz/TASPEC.ARC").unwrap();
 
-    let channels: FlowpathCollection = walk_channels(&subwta, &relief, &flovec, &fvslop, &taspec);
+    let (netw, network) = read_netw_tab("dem/topaz/NETW.TAB", &subwta).unwrap();
+    let _ = write_network("watershed/network.txt", &network);
 
+    let channels: FlowpathCollection = walk_channels(&subwta, &relief, &flovec, &fvslop, &taspec, &netw);
     let hillslopes: FlowpathCollection = abstract_subcatchments(&subwta, &relief, &flovec, &fvslop, &taspec, &channels);
 
     let tasks: Vec<Box<dyn FnOnce() -> Result<()> + Send>> = vec![
-        Box::new(|| channels.write_channel_slp("watershed/slope_files/channels.slp", max_points, clip_hillslopes, clip_hillslope_length)),
-        Box::new(|| channels.write_metadata_to_csv("watershed/channels.csv", &subwta.wgs_transform)),
+        Box::new(|| channels.write_channel_slp("watershed/slope_files/channels.slp", max_points)),
+        Box::new(|| channels.write_chn_metadata_to_csv("watershed/channels.csv", &subwta.wgs_transform)),
         Box::new(|| hillslopes.write_slps("watershed/slope_files/hillslopes/", max_points, clip_hillslopes, clip_hillslope_length)),
         Box::new(|| hillslopes.write_metadata_to_csv("watershed/hillslopes.csv", &subwta.wgs_transform)),
         Box::new(|| hillslopes.write_subflows_metadata_to_csv("watershed/flowpaths.csv", &subwta.wgs_transform)),
@@ -305,6 +308,7 @@ impl FlowpathCollection {
             slope_scalar,
             cellsize,
             elevation,
+            -1
         )
     }
 
@@ -376,12 +380,12 @@ impl FlowpathCollection {
     }
     
     #[allow(dead_code)]
-    pub fn write_channel_slp(&self, path: &str, max_points: usize, clip_hillslopes: bool, clip_hillslope_length: f64) -> std::io::Result<()> {
+    pub fn write_channel_slp(&self, path: &str, max_points: usize) -> std::io::Result<()> {
 
         let mut all_strings = Vec::new();
         all_strings.push(format!("99.1\n{}\n", &self.flowpaths.len()));
 
-        for fp in &self.flowpaths {
+        for fp in self.flowpaths.iter().rev() {
 
             let interpolated: (Vec<f64>, Vec<f64>);
             let (d, s) = if (fp.distances_norm.len() > max_points) || (fp.slopes.len() == 1) {
@@ -399,32 +403,9 @@ impl FlowpathCollection {
                 .map(|(&dist, &slope)| format!("{:.4}, {:.5}", dist, slope))
                 .collect();
 
-            let mut length = fp.length;
-            let cellsize = fp.cellsize;
-            let mut width = fp.cellsize;
-            let area = fp.area_m2();
-
-            if clip_hillslopes {
-                if length > clip_hillslope_length {
-                    length = clip_hillslope_length;
-                    width = area / length;
-                }
-            }
-
-            let px_width = width / cellsize;
-            /*
-            let mut px_width = width / cellsize;
-            if px_width > 3.0 {
-                px_width = 3.0;
-            }
-            else if px_width < 0.5 {
-                px_width = 3.0;
-            }
-            */
-    
             let slp = format!(
-                "{} {}\n{} {}\n{} \n",
-                fp.aspect, px_width, npts, length, defs.join(" ")
+                "{:.4} {:.1}\n{} {:.1}\n{} \n",
+                fp.aspect, fp.width, npts, fp.length, defs.join(" ")
             );
             all_strings.push(slp);
         }
@@ -466,6 +447,55 @@ impl FlowpathCollection {
     
         Ok(())
     }
+
+    #[allow(dead_code)]
+    pub fn write_chn_metadata_to_csv(&self, path: &str, wgs_transform: &[f64; 4]) -> std::io::Result<()> {
+        let file = File::create(path).unwrap();
+        let mut writer = csv::Writer::from_writer(file);
+    
+        let headers: Vec<String> = vec![
+            String::from("topaz_id"),
+            String::from("slope_scalar"),
+            String::from("length"),
+            String::from("width"),
+            String::from("direction"),
+            String::from("order"),
+            String::from("aspect"),
+            String::from("area"),
+            String::from("elevation"),
+            String::from("centroid_px"),
+            String::from("centroid_py"),
+            String::from("centroid_lon"),
+            String::from("centroid_lat"),
+        ];
+    
+        writer.write_record(headers).unwrap();
+    
+        for fp in &self.flowpaths {
+            let (lon, lat) = px_to_wgs(wgs_transform, fp.centroid_px.0, fp.centroid_px.1);
+
+            let record: Vec<String> = vec![
+                fp.topaz_id.to_string(),
+                fp.slope_scalar.to_string(),
+                fp.length.to_string(),
+                fp.width.to_string(),
+                fp.direction.to_string(),
+                fp.order.to_string(),
+                fp.aspect.to_string(),
+                (fp.area_m2() as i32).to_string(),
+                fp.elevation.to_string(),
+                fp.centroid_px.0.to_string(), 
+                fp.centroid_px.1.to_string(),
+                lon.to_string(),
+                lat.to_string(),
+            ];
+    
+            writer.write_record(record).unwrap();
+        }
+
+        Ok(())
+    }
+
 
     #[allow(dead_code)]
     pub fn write_metadata_to_csv(&self, path: &str, wgs_transform: &[f64; 4]) -> std::io::Result<()> {
@@ -528,6 +558,7 @@ impl FlowpathCollection {
             String::from("aspect"),
             String::from("area"),
             String::from("elevation"),
+            String::from("order"),
             String::from("centroid_px"),
             String::from("centroid_py"),
             String::from("centroid_lon"),
@@ -551,6 +582,7 @@ impl FlowpathCollection {
                         fp.aspect.to_string(),
                         fp.area_m2().to_string(),
                         fp.elevation.to_string(),
+                        fp.order.to_string(),
                         fp.centroid_px.0.to_string(), 
                         fp.centroid_px.1.to_string(),
                         lon.to_string(),
@@ -591,7 +623,8 @@ pub struct FlowPath {
     pub slopes_r: Vec<f64>,
     pub distance_to_chn_r: Vec<f64>,
     pub kp: f64,
-    pub elevation: f64
+    pub elevation: f64,
+    pub order: i32,
 }
 
 impl Default for FlowPath {
@@ -616,6 +649,7 @@ impl Default for FlowPath {
             distance_to_chn_r: Vec::new(),
             kp: -1.0,
             elevation: -1.0,
+            order: -1,
         }
     }
 }
@@ -640,6 +674,7 @@ impl FlowPath {
         slope_scalar: f64,
         cellsize: f64,
         elevation: f64,
+        order: i32,
     ) -> Self {
         let mut slopes_r = slopes.clone();
         slopes_r.reverse();
@@ -670,6 +705,7 @@ impl FlowPath {
             distance_to_chn_r,
             kp,
             elevation,
+            order,
         }
     }
 
@@ -725,7 +761,7 @@ impl FlowPath {
 
         // Build the final _slp string
         let slp = format!(
-            "97.3\n{}\n{} {}\n{} {}\n{} ",
+            "97.3\n{}\n{:.4} {:.1}\n{} {:.1}\n{} ",
             nofes, self.aspect, width, npts, length, defs.join(" ")
         );
 
@@ -744,6 +780,7 @@ pub fn walk_channels(
     flovec: &Raster<i32>,
     fvslop: &Raster<f64>,
     taspec: &Raster<f64>,
+    netw:   &HashMap<i32, ChannelNode>
 ) -> FlowpathCollection {
 
     let unique_vals = subwta.unique_values();
@@ -751,7 +788,7 @@ pub fn walk_channels(
     topaz_ids.sort();
 
     let flowpaths: Vec<FlowPath> = topaz_ids.into_par_iter()
-        .map(|topaz_id| walk_channel(topaz_id, &subwta, &relief, &flovec, &fvslop, &taspec))
+        .map(|topaz_id| walk_channel(topaz_id, &subwta, &relief, &flovec, &fvslop, &taspec, &netw))
         .collect();
 
     FlowpathCollection {
@@ -767,6 +804,7 @@ pub fn walk_channel(topaz_id: i32,
     _flovec: &Raster<i32>,
     fvslop: &Raster<f64>,
     taspec: &Raster<f64>,
+    netw:   &HashMap<i32, ChannelNode>
 ) -> FlowPath {
     // get hashset of indices of topaz_id
     let indices: HashSet<usize> = subwta.indices_of(topaz_id);
@@ -823,8 +861,6 @@ pub fn walk_channel(topaz_id: i32,
 
     let direction: f64 = compute_direction(head, tail);
 
-    let width: f64 = cellsize;
-
     let slope_scalar: f64;
     if n == 1 {
         distances.push(cellsize);
@@ -846,6 +882,10 @@ pub fn walk_channel(topaz_id: i32,
         distances_norm.push(d / length);
     }
 
+    let order = netw.get(&topaz_id).map_or(8, |node| std::cmp::min(node.order, 8));
+                     //     1    2    3    4    5    6    7    8
+    let width: f64 = [-1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0, 4.0][order as usize];
+
     FlowPath::new(
         sorted_indices,
         head,
@@ -863,6 +903,7 @@ pub fn walk_channel(topaz_id: i32,
         slope_scalar,
         cellsize,
         elevation,
+        order
     )
 }
 
@@ -1025,6 +1066,7 @@ pub fn walk_flowpath(
         slope_scalar,
         cellsize,
         elevation,
+        -1
     )
 }
 

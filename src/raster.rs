@@ -424,7 +424,12 @@ impl Raster<f64> {
             let deg_aspect = self.data[index];
             rad_aspects.push(deg_aspect.to_radians());
         }
-        circmean(rad_aspects.as_slice()).to_degrees()
+        let mut aspect = circmean(rad_aspects.as_slice()).to_degrees();
+
+        if aspect < 0.0 {
+            aspect += 360.0;
+        }
+        aspect
     }
 }
 
