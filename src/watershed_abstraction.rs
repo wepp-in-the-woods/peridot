@@ -400,7 +400,7 @@ impl FlowpathCollection {
             // Build the defs string
             let defs: Vec<String> = d.iter()
                 .zip(s.iter())
-                .map(|(&dist, &slope)| format!("{:.4}, {:.5}", dist, slope))
+                .map(|(&dist, &slope)| format!("{:.4}, {:.4}", dist, slope))
                 .collect();
 
             let slp = format!(
@@ -746,7 +746,7 @@ impl FlowPath {
         // Build the defs string
         let defs: Vec<String> = d.iter()
             .zip(s.iter())
-            .map(|(&dist, &slope)| format!("{:.4}, {:.5}", dist, slope))
+            .map(|(&dist, &slope)| format!("{:.4}, {:.4}", dist, slope))
             .collect();
 
         let mut width = self.width;
