@@ -163,6 +163,12 @@ pub fn px_to_wgs(wgs_transform: &[f64; 4], px: i32, py: i32) -> (f64, f64) {
     (lon, lat)
 }
 
+pub fn wgs_to_px(wgs_transform: &[f64; 4], lon: f64, lat: f64) -> (i32, i32) {
+    let px: i32 = ((lon - wgs_transform[0]) / wgs_transform[2]).round() as i32;
+    let py: i32 = ((lat - wgs_transform[1]) / -wgs_transform[3]).round() as i32;
+    (px, py)
+}
+
 pub trait FromF64 {
     fn from_f64(value: f64) -> Self;
 }
@@ -274,6 +280,44 @@ impl<T> Raster<T> {
         y * self.width + x
     }
 }
+
+// get the neighbors of the cell
+impl<T> Raster<T> { #[inline(always)]
+    pub fn get_neighbors(&self, indx: usize) -> Vec<usize> {
+        let (x, y) = self.index_to_xy(indx);
+
+        let mut neighbors = Vec::new();
+
+        if y > 0 {
+            neighbors.push(self.xy_to_index(x, y - 1));
+        }
+        if y < self.height - 1 {
+            neighbors.push(self.xy_to_index(x, y + 1));
+        }
+        if x > 0 {
+            neighbors.push(self.xy_to_index(x - 1, y));
+        }
+        if x < self.width - 1 {
+            neighbors.push(self.xy_to_index(x + 1, y));
+        }
+        if y > 0 && x > 0 {
+            neighbors.push(self.xy_to_index(x - 1, y - 1));
+        }
+        if y > 0 && x < self.width - 1 {
+            neighbors.push(self.xy_to_index(x + 1, y - 1));
+        }
+        if y < self.height - 1 && x > 0 {
+            neighbors.push(self.xy_to_index(x - 1, y + 1));
+        }
+        if y < self.height - 1 && x < self.width - 1 {
+            neighbors.push(self.xy_to_index(x + 1, y + 1));
+        }
+
+        neighbors
+    }
+}
+
+
 
 impl<T> Raster<T> {
     pub fn distance_between(&self, index1: usize, index2: usize) -> f64 {
