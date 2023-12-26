@@ -20,7 +20,7 @@ struct Opts {
     max_points: usize,
 
     /// Whether to clip hillslopes or not
-    #[clap(short, long, default_value = "true")]
+    #[clap(short, long, default_value = "false")]
     clip_hillslopes: bool,
 
     /// Clip hillslope length

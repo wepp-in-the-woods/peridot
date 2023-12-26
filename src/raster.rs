@@ -1,18 +1,49 @@
 use std::fmt;
 use std::error::Error;
 use std::collections::HashSet;
+use std::iter::zip;
 
 use core::any::Any;
 
+use gdal::raster::Buffer;
 use gdal::errors::GdalError;
 use gdal::raster::GdalType;
 use gdal::spatial_ref::SpatialRef;
 
 use std::str::FromStr;
 
-use crate::support::circmean;
 
 use proj::Proj;
+
+
+/// Computes the circular mean of a slice of angles in radians.
+///
+/// The circular mean is calculated using the trigonometric
+/// representation of the angles. The function expects angles
+/// to be in radians and returns the mean angle in radians.
+///
+/// # Arguments
+///
+/// * `angles` - A slice of angles in radians.
+///
+/// # Returns
+///
+/// Returns the circular mean of the given angles in radians.
+#[allow(dead_code)]
+pub fn circmean(angles: &[f64]) -> f64 {
+    let mut sum_sin = 0.0;
+    let mut sum_cos = 0.0;
+
+    for &angle in angles {
+        sum_sin += angle.sin();
+        sum_cos += angle.cos();
+    }
+
+    sum_sin /= angles.len() as f64;
+    sum_cos /= angles.len() as f64;
+
+    sum_sin.atan2(sum_cos)
+}
 
 fn transform_coords(x: f64, y: f64, s_srs: &str, t_srs: &str) -> Result<(f64, f64), Box<dyn Error>> {
     let transformer: Proj= Proj::new_known_crs(&s_srs, &t_srs, None)?;
@@ -118,7 +149,7 @@ impl<T> Raster<T> {
                 // lon = ll_wgs.0 + x * (ur_wgs.0 - ll_wgs.0) / width
                 // lat = ur_wgs.1 - y * (ur_wgs.1 - ll_wgs.1) / height
                 [ll_wgs.0, ur_wgs.1, (ur_wgs.0 - ll_wgs.0) / width as f64, (ur_wgs.1 - ll_wgs.1) / height as f64]
-        
+
             },
             None => [0.0, 0.0, 0.0, 0.0],
         };
@@ -157,16 +188,116 @@ impl<T: Clone> Clone for Raster<T> {
     }
 }
 
+impl<T: Default + Clone> Raster<T> {
+    pub fn empty_clone(&self) -> Self {
+        Raster {
+            width: self.width,
+            height: self.height,
+            cellsize: self.cellsize,
+            data: vec![T::default(); self.width * self.height],
+            no_data: self.no_data.clone(),
+            geo_transform: self.geo_transform,
+            proj4: self.proj4.clone(),
+            path: self.path.clone(),
+            name: self.name.clone(),
+            map_type: self.map_type.clone(),
+            wgs_transform: self.wgs_transform.clone(),
+        }
+    }
+}
+
+impl<T: Default + Clone> Raster<T> {
+    /// Creates and returns a new `Raster` where each cell is modified based on the provided mask.
+    ///
+    /// If a cell in the `mask` has a value of 1, the corresponding cell from the original `Raster` is retained.
+    /// Otherwise, the `masked_value` is used in the new `Raster`.
+    ///
+    /// # Arguments
+    ///
+    /// * `mask` - A `Raster<i32>` where cells with a value of 1 indicate the original value should be retained.
+    /// * `masked_value` - The value to use in the resulting `Raster` for cells where the `mask` is not 1.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the dimensions of the `mask` do not match the dimensions of the original `Raster`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// // Assuming you've defined Raster and implemented with_mask...
+    /// let raster = Raster::new(...);
+    /// let mask = Raster::<i32>::new(...);
+    /// let masked_raster = raster.with_mask(mask, some_masked_value);
+    /// ```
+    pub fn from_mask(&self, mask: &Raster<i32>, masked_value: T) -> Self {
+        // Check dimensions
+        assert!(mask.width == self.width, "Mask width does not match Raster width");
+        assert!(mask.height == self.height, "Mask height does not match Raster height");
+        assert!(mask.data.len() == self.data.len(), "Mask data length does not match Raster data length");
+
+        let mut masked_data = Vec::new();
+
+        for (x, m) in zip(&self.data, &mask.data) {
+            if *m == 1 {
+                masked_data.push(x.clone());
+            } else {
+                masked_data.push(masked_value.clone());
+            }
+        }
+
+        Raster {
+            width: self.width,
+            height: self.height,
+            cellsize: self.cellsize,
+            data: masked_data,
+            no_data: self.no_data.clone(),
+            geo_transform: self.geo_transform,
+            proj4: self.proj4.clone(),
+            path: self.path.clone(),
+            name: self.name.clone(),
+            map_type: self.map_type.clone(),
+            wgs_transform: self.wgs_transform.clone(),
+        }
+    }
+}
+
 pub fn px_to_wgs(wgs_transform: &[f64; 4], px: i32, py: i32) -> (f64, f64) {
     let lon: f64 = wgs_transform[0] + px as f64 * wgs_transform[2];
     let lat: f64 = wgs_transform[1] - py as f64 * wgs_transform[3];
     (lon, lat)
 }
 
+pub fn utm_to_px(geo_transform: &[f64], easting: f64, northing: f64) -> (i32, i32) {
+    let xorigin = geo_transform[0];
+    let xpxsize = geo_transform[1];
+    let xzero = geo_transform[2];
+    let yorigin = geo_transform[3];
+    let yzero = geo_transform[4];
+    let ypxsize = geo_transform[5];
+
+    let px = (easting - xorigin) / xpxsize;
+    let py = (northing - yorigin) / ypxsize;
+    
+    (px as i32, py as i32)
+}
+
 pub fn wgs_to_px(wgs_transform: &[f64; 4], lon: f64, lat: f64) -> (i32, i32) {
     let px: i32 = ((lon - wgs_transform[0]) / wgs_transform[2]).round() as i32;
     let py: i32 = ((lat - wgs_transform[1]) / -wgs_transform[3]).round() as i32;
     (px, py)
+}
+
+
+
+pub fn precise_wgs_to_px(proj4: Option<&String>, geo_transform: &[f64], lon: f64, lat: f64) -> (i32, i32) {
+    let (e, n) = match &proj4 {
+        Some(proj_str) => {
+            transform_coords(lon, lat,  "+proj=longlat +datum=WGS84 +no_defs", &proj_str).unwrap()
+        },
+        None => (0.0, 0.0),
+    };
+
+    utm_to_px(geo_transform, e, n)
 }
 
 pub trait FromF64 {
@@ -261,7 +392,84 @@ impl<T: GdalType + Default + Copy + FromF64> Raster<T> {
             map_type,
         ))
     }
+
+    #[allow(dead_code)]
+    pub fn read_band(path: &str, band_indx: isize) -> Result<Raster<T>, GdalError> {
+        let dataset = gdal::Dataset::open(path)?;
+        let (width, height) = dataset.raster_size();
+        let geo_transform = dataset.geo_transform()?;
+        let cellsize = geo_transform[1];
+
+        let wkt = dataset.projection();
+        let spatial_ref = SpatialRef::from_wkt(&wkt).unwrap();
+        let proj4 = spatial_ref.to_proj4().ok();
+
+        //let spatial_ref_result = dataset.spatial_ref();
+        //let proj4 = match spatial_ref_result {
+        //    Ok(sr) => sr.to_proj4().ok(),
+        //    Err(_) => None,
+        //};
+
+        let band = dataset.rasterband(band_indx)?;
+        let buffer = band.read_as::<T>((0, 0), (width, height), (width, height), None)?;
+        let data = buffer.data;
+
+        let no_data_value: Option<f64> = band.no_data_value();
+        let no_data = no_data_value.map(|v| T::from_f64(v));
+
+        // find the name by spliting the path and removing the extension from the filename of the file
+        let name = path.split("/").last().unwrap().split(".").next().unwrap().to_string();
+
+        // find the map type from the name using from_str
+        let map_type = MapType::from_str(&name).unwrap();
+
+        // refactor to use Raster::new
+
+        Ok(Raster::new(
+            width,
+            height,
+            cellsize,
+            data,
+            no_data,
+            geo_transform,
+            proj4,
+            path.to_string(),
+            name,
+            map_type,
+        ))
+    }
+
 }
+
+impl<T: GdalType + Default + Copy  + ToF64> Raster<T> {
+    pub fn write(&self, path: &str) -> Result<(), GdalError> {
+        // Create a new GDAL dataset
+        let driver = gdal::Driver::get("GTiff")?;
+        let mut dataset = driver.create_with_band_type::<T, &str>(path, self.width as isize, self.height as isize, 1)?;
+
+        // Set the geotransform and projection
+        dataset.set_geo_transform(&self.geo_transform)?;
+        if let Some(proj) = &self.proj4 {
+            let spatial_ref = SpatialRef::from_proj4(&proj)?;
+            let wkt = spatial_ref.to_wkt()?;
+            dataset.set_projection(&wkt)?;
+        }
+
+        // Write the raster data
+        let mut band = dataset.rasterband(1)?;
+        let buffer = Buffer::new((self.width, self.height), self.data.clone());
+        band.write((0, 0), (self.width, self.height), &buffer)?;
+
+        // Set the NoData value if it exists
+        if let Some(no_data_val) = self.no_data {
+            let no_data_f64: f64 = no_data_val.to_f64();
+            band.set_no_data_value(no_data_f64)?;
+        }
+
+        Ok(())
+    }
+}
+
 
 // method to transform usize index to x,y coordinates
 impl<T> Raster<T> {
@@ -315,9 +523,28 @@ impl<T> Raster<T> { #[inline(always)]
 
         neighbors
     }
+
+    pub fn get_4d_neighbors(&self, indx: usize) -> Vec<usize> {
+        let (x, y) = self.index_to_xy(indx);
+
+        let mut neighbors = Vec::new();
+
+        if y > 0 {
+            neighbors.push(self.xy_to_index(x, y - 1));
+        }
+        if y < self.height - 1 {
+            neighbors.push(self.xy_to_index(x, y + 1));
+        }
+        if x > 0 {
+            neighbors.push(self.xy_to_index(x - 1, y));
+        }
+        if x < self.width - 1 {
+            neighbors.push(self.xy_to_index(x + 1, y));
+        }
+
+        neighbors
+    }
 }
-
-
 
 impl<T> Raster<T> {
     pub fn distance_between(&self, index1: usize, index2: usize) -> f64 {

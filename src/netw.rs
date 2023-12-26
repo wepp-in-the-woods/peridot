@@ -160,7 +160,7 @@ mod tests {
         let path = "tests/fixtures/watershed_abstraction/mdobre-scarce-belch/dem/topaz/SUBWTA.ARC";
         let subwta = Raster::<i32>::read(&path).unwrap();
 
-        let file_path = Path::new("tests/fixtures/watershed_abstraction/mdobre-scarce-belch/dem/topaz/NETW.TAB");
+        let file_path = "tests/fixtures/watershed_abstraction/mdobre-scarce-belch/dem/topaz/NETW.TAB";
         match read_netw_tab(file_path, &subwta) {    
             Ok((data, network)) => {
                 println!("Data: {:?}", data);
