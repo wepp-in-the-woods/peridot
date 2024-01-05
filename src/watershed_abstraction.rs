@@ -232,7 +232,11 @@ impl FlowpathCollection {
                     continue;
                 }
 
-                let slp_p: f64 = fp.interp_slp_at_distance_to_channel(*d_p);
+                let mut slp_p: f64 = fp.interp_slp_at_distance_to_channel(*d_p);
+                if slp_p <= 0.0 {
+                    slp_p = 0.001;
+                }
+                assert!(slp_p.is_finite());
                 assert!(slp_p >= 0.0);
 
                 num += slp_p * fp.kp;
@@ -820,7 +824,24 @@ impl FlowPath {
 
     #[allow(dead_code)]
     pub fn interp_slp_at_distance_to_channel(&self, distance_to_chn: f64) -> f64 {
-        interp(&self.distance_to_chn_r, &self.slopes_r, distance_to_chn)
+        let x = interp(&self.distance_to_chn_r, &self.slopes_r, distance_to_chn);
+
+        if x.is_finite() {
+            return x as f64;
+        }
+        // return slopes_r value at index where distance_to_chn is closest to self.distance_to_chn_r
+        let mut min_dist: f64 = 1e10;
+        let mut min_index: usize = 0;
+        for (i, &d) in self.distance_to_chn_r.iter().enumerate() {
+            let dist = (d - distance_to_chn).abs();
+            if dist < min_dist {
+                min_dist = dist;
+                min_index = i;
+            }
+        }
+
+        self.slopes_r[min_index]
+        
     }
 
     #[allow(dead_code)]

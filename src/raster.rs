@@ -75,24 +75,38 @@ impl FromStr for MapType {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "BOUND" => Ok(MapType::BOUND),
-            "CHNJNT" => Ok(MapType::CHNJNT),
-            "DISCHA" => Ok(MapType::DISCHA),
-            "DISOUT" => Ok(MapType::DISOUT),
-            "ELDCHA" => Ok(MapType::ELDCHA),
-            "ELDOUT" => Ok(MapType::ELDOUT),
-            "FLOPAT" => Ok(MapType::FLOPAT),
-            "FLOVEC" => Ok(MapType::FLOVEC),
-            "FVSLOP" => Ok(MapType::FVSLOP),
-            "NETFUL" => Ok(MapType::NETFUL),
-            "NETW" => Ok(MapType::NETW),
-            "NETWE" => Ok(MapType::NETWE),
-            "RELIEF" => Ok(MapType::RELIEF),
-            "SUBWTA" => Ok(MapType::SUBWTA),
-            "TASPEC" => Ok(MapType::TASPEC),
-            "UPAREA" => Ok(MapType::UPAREA),
-            _ => Ok(MapType::OTHER),
+        let lower_s = s.to_lowercase();
+
+        if lower_s == "bound" {
+            Ok(MapType::BOUND)
+        } else if lower_s == "chnjnt" {
+            Ok(MapType::CHNJNT)
+        } else if lower_s.contains("discha") {
+            Ok(MapType::DISCHA)
+        } else if lower_s.contains("disout") {
+            Ok(MapType::DISOUT)
+        } else if lower_s.contains("eldout") {
+            Ok(MapType::ELDOUT)
+        } else if lower_s.contains("flopat") {
+            Ok(MapType::FLOPAT)
+        } else if lower_s.contains("flovec") {
+            Ok(MapType::FLOVEC)
+        } else if lower_s.contains("slop") {
+            Ok(MapType::FVSLOP)
+        } else if lower_s.contains("netw")  || lower_s.contains("stream") {
+            Ok(MapType::NETW)
+        } else if lower_s.contains("netwe") {
+            Ok(MapType::NETWE)
+        } else if lower_s.contains("relief") {
+            Ok(MapType::RELIEF)
+        } else if lower_s.contains("subwta") {
+            Ok(MapType::SUBWTA)
+        } else if lower_s.contains("taspec") || lower_s.contains("aspect") {
+            Ok(MapType::TASPEC)
+        } else if lower_s.contains("uparea") {
+            Ok(MapType::UPAREA)
+        } else {
+            Ok(MapType::OTHER)
         }
     }
 }
