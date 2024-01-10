@@ -7,6 +7,14 @@ edition = "2021"
 name = "abstract_watershed"
 path = "src/bin/abstract_watershed.rs"
 
+[[bin]]
+name = "hubbarbrook_culvert_delineation"
+path = "src/scripts/hubbarbrook_culvert_delineation.rs"
+
+[[bin]]
+name = "polygonize_test"
+path = "src/scripts/polygonize_test.rs"
+
 [dependencies]
 gdal = "0.11"
 maplit = "1.0"

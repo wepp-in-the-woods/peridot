@@ -8,12 +8,13 @@ use peridot::catchment_trace::{
     trace_catchment_lnglat, 
     dinf_trace_catchment_utm,
     trace_catchment_utm, 
-    write_lookup_table_to_file, 
     walk_flowpath_to_indx,
     flowpath_from_indices,
 };
 
-use peridot::whiteboxtools_wrapper::{
+use peridot::whiteboxtools_wrappers::{
+    combine_geojson_files,
+    polygonize_raster,
     rescale_raster,
     d8_flow_direction_raster,
     d8_flowaccum_raster,
@@ -47,11 +48,12 @@ fn main() {
     let clip_hillslope_length = 1000.0;
 
     let lidar_dem = "/geodata/locales/hubbar_brook/dem/HBEF_1m_LiDAR_DEM.tif";
+    let epsg = "32619";
 
     // resolutions to test
     // 10 5, 3m
 
-    let resolution = 5.0;
+    let resolution = 2.0;
 
     let wd = format!("/workdir/peridot/tests/fixtures/catchment_trace/hubbar_brook/{}", resolution as i32);
 
@@ -171,7 +173,7 @@ fn main() {
     let mut lookup_table: HashMap<i32, Vec<i32>> = HashMap::new();
     let mut reverse_lookup: HashMap<Vec<i32>, i32> = HashMap::new();
 
-    let mut culvert_upareas = d8_flovec.empty_clone();
+    let mut uparea_geojson_fns: Vec<String> = Vec::new();
 
     match geojson {
         GeoJson::FeatureCollection(collection) => {
@@ -188,40 +190,7 @@ fn main() {
                                 let northing = coordinates[1];
 
                                 let (indices, flowpaths) = dinf_trace_catchment_utm(easting, northing, &flovec, &d8_flovec.empty_clone());
-                                for &indx in &indices {
-                                    let existing_val = culvert_upareas.data[indx];
-                                    if existing_val != 0 {
-                                        let mut vec = Vec::new();
-                                        if existing_val < 300 {
-                                            // First overlap at this location
-                                            vec.push(existing_val);
-                                        } else {
-                                            // Existing overlap area, get the existing set
-                                            if let Some(existing_vec) = lookup_table.get(&existing_val) {
-                                                vec = existing_vec.clone();
-                                            }
-                                        }
-                                        vec.push(i);
-                                        vec.sort();
-                                        vec.dedup();
-                            
-                                        // Check if this set of overlaps already exists
-                                        if let Some(&existing_key) = reverse_lookup.get(&vec) {
-                                            // Use the existing key
-                                            culvert_upareas.data[indx] = existing_key;
-                                        } else {
-                                            // Create a new key
-                                            lookup_table.insert(overlap_key, vec.clone());
-                                            reverse_lookup.insert(vec, overlap_key);
-                                            culvert_upareas.data[indx] = overlap_key;
-                                            overlap_key += 1;
-                                        }
-                                    } else {
-                                        // No overlap
-                                        culvert_upareas.data[indx] = i;
-                                    }
-                                }
-
+                                
                                 let (px, py) = utm_to_px(&flovec.geo_transform, easting, northing);
                                 let tail_index = flovec.xy_to_index(px as usize, py as usize);
 
@@ -283,20 +252,25 @@ fn main() {
 
                                     // build shapefile with upareas and attribute table of this data
 
-                                    let json_data = json!({
-                                        "ID": id.to_string(),
-                                        "enum": i,
-                                        "easting": easting,
-                                        "northing": northing,
-                                        "n": indices.len(),
-                                        "flowpath_longest_n": max_n,
-                                        "terminal_flowpaths": flowpath_collection.flowpaths.len(),
-                                        "hillslope_pts": hillslope.elevs.len(),
-                                    });
 
-                                    println!("{}", serde_json::to_string(&json_data).unwrap());
+                                let properties = json!({
+                                    "ID": id.to_string(),
+                                    "enum": i,
+                                    "easting": easting,
+                                    "northing": northing,
+                                    "n": indices.len(),
+                                    "flowpath_longest_n": max_n,
+                                    "terminal_flowpaths": flowpath_collection.flowpaths.len(),
+                                    "hillslope_pts": hillslope.elevs.len(),
+                                });
 
-                                    
+                                // add properties to the geojson
+                                let culvert_geojson_fn = format!("{}/culvert{}.geojson", wd, i);
+                                polygonize_raster(&culvert_upareas_opt_fn, &culvert_geojson_fn, &properties);
+                                uparea_geojson_fns.push(culvert_geojson_fn);
+
+                                println!("{}", serde_json::to_string(&properties).unwrap());
+
                                 i += 1;
                             },
                             _ => panic!("Expected a Point geometry, got {:?}", geometry),
@@ -307,38 +281,6 @@ fn main() {
         },
         _ => println!("Expected a FeatureCollection"),
     }
+    combine_geojson_files(&uparea_geojson_fns, &format!("{}/culvert_upareas.geojson", wd), &epsg);
   
-    let culvert_upareas_fn = format!("{}/culvert_upareas_i32.tif", wd); 
-    culvert_upareas.write(&culvert_upareas_fn);
-
-    let culvert_upareas_opt_fn = format!("{}/culvert_upareas.tif", wd); 
-
-    let output = Command::new("gdal_translate")
-    .arg("-ot")
-    .arg("Int16")
-    .arg("-co")
-    .arg("COMPRESS=LZW")
-    .arg(&culvert_upareas_fn)
-    .arg(&culvert_upareas_opt_fn)
-    .output()
-    .expect("Failed to execute gdal_translate");
-
-    if output.status.success() {
-        println!("gdal_translate executed successfully");
-    } else {
-        let error_message = String::from_utf8_lossy(&output.stderr);
-        println!("Error executing gdal_translate: {}", error_message);
-    }
-
-    if let Err(err) = fs::remove_file(&culvert_upareas_fn) {
-        println!("Failed to delete file {}: {}", &culvert_upareas_fn, err);
-    } else {
-        println!("File {} deleted successfully", &culvert_upareas_fn);
-    }
-
-    // Assuming lookup_table and lookup_table_fn are already defined
-    let lookup_table_fn = format!("{}/culver_lookup.json", wd);
-    write_lookup_table_to_file(&lookup_table, &lookup_table_fn);
-
-    
 }
