@@ -10,7 +10,7 @@ use crate::catchment_trace::trace_catchment;
 use crate::raster::{Raster, wgs_to_px};
 use crate::watershed_abstraction::PATHS;
 
-fn rasterize_skid_trails(skid_geojson: &str, template_fn: &str, dst_fn: &str) ->
+pub fn rasterize_skid_trails(skid_geojson: &str, template_fn: &str, dst_fn: &str) ->
     i32
 {
 
@@ -41,7 +41,7 @@ fn rasterize_skid_trails(skid_geojson: &str, template_fn: &str, dst_fn: &str) ->
     1
 }
 
-fn segment_skid_trails_raster(
+pub fn segment_skid_trails_raster(
     relief: &Raster<f64>,
     skid: &Raster<i32>,
     segmented_skid_raster_fn: &str) {
@@ -191,7 +191,7 @@ fn walk_skid_trail(
                 } 
             } else {
                 let mut max_dz = -1e38;
-                // pick the greates gradient in the cooresponding direction
+                // pick the greatest gradient in the cooresponding direction
                 for neighbor in neighbors {
                     let dz = (relief.data[neighbor] - z) * direction as f64;
                     if dz >= 0.0 {
@@ -321,7 +321,7 @@ pub fn catchment_skid_trails_raster(
     seg_skids: &Raster<i32>,
     flovec: &Raster<i32>,
     relief: &Raster<f64>,
-    catchment_skid_raster_fn: &str,
+    catchment_skid_raster_fn: &str
 ) {
 
     // identify skid ids
@@ -690,7 +690,6 @@ mod tests {
         let dst_fn4 = "tests/fixtures/watershed_abstraction/bearded-flyover/skid_trails/Skid_Channels.tif";
         let seg_links_fn = "tests/fixtures/watershed_abstraction/bearded-flyover/skid_trails/segment_links.txt";
         identify_skid_channels(&seg_skids, &flovec, &relief, &bound, &dst_fn4, &seg_links_fn);
-        
     }
 }
 

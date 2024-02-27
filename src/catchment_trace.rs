@@ -310,6 +310,72 @@ pub fn walk_flowpath_to_indx(
     flowpath_from_indices(sorted_indices, &relief, &flovec, &fvslop, &taspec, fp_id)
 }
 
+
+#[allow(dead_code)]
+pub fn walk_skid_flowpath(
+    head_index: usize,
+    skid_catchments: &Raster<i32>,
+    relief: &Raster<f64>,
+    flovec: &Raster<i32>,
+    fvslop: &Raster<f64>,
+    taspec: &Raster<f64>,
+    fp_id: i32
+) -> FlowPath {
+    let cellsize: f64 = flovec.cellsize;
+    
+    let mut current_index: usize = head_index;
+    let mut sorted_indices: Vec<usize> = vec![head_index];
+    let mut indices_hash: HashSet<usize> = HashSet::new();
+    indices_hash.insert(head_index);
+
+    let mut i = 0;
+    loop {
+        let flow_dir: i32 = flovec.data[current_index];
+        
+        // Check if flow_dir is in PATHS and assign dx and dy
+        let (dx, dy) = if let Some(&direction) = PATHS.get(&flow_dir) {
+            direction
+        } else {
+            // If flow_dir is not found in PATHS, break from the loop
+            break;
+        };
+
+        let (x, y) = flovec.index_to_xy(current_index);
+        let next_x: isize = x as isize + dx;
+        let next_y: isize = y as isize + dy;
+
+        if next_x < 0 || next_x >= flovec.width as isize || next_y < 0 || next_y >= flovec.height as isize {
+            break;
+        }
+        
+        let next_indx: usize = flovec.xy_to_index(next_x as usize, next_y as usize);
+
+        // check if we walked in a circle
+        if indices_hash.contains(&next_indx) {
+            break;
+        }
+
+        sorted_indices.push(next_indx);
+        indices_hash.insert(next_indx);
+
+//        if skid_catchments.data[next_indx] != fp_id {
+//            break;
+//        }
+
+        current_index = next_indx;
+
+        i += 1;
+
+        if i > 10000 {
+            break;
+        }
+    }
+
+    assert!(sorted_indices.len() > 1);
+
+    flowpath_from_indices(sorted_indices, &relief, &flovec, &fvslop, &taspec, fp_id)
+}
+
 pub fn flowpath_from_indices(
     indices: Vec<usize>,
     relief: &Raster<f64>,
@@ -496,310 +562,4 @@ mod tests {
         let relief = Raster::<i32>::read("tests/fixtures/watershed_abstraction/litigious-sagacity/dem/topaz/RELIEF.ARC").unwrap();
     }
     
-    use std::fs;
-    use serde_json::json;
-    use std::path::Path;
-
-    #[test]
-    fn test_hubbard_brook_culvert() {
-
-        let max_points = 1000;
-        let clip_hillslopes = false;
-        let clip_hillslope_length = 1000.0;
-
-        let lidar_dem = "/geodata/locales/hubbar_brook/dem/HBEF_1m_LiDAR_DEM.tif";
-
-        // resolutions to test
-        // 10 5, 3m
-
-        let resolution = 5.0;
-
-        let wd = format!("/workdir/peridot/tests/fixtures/catchment_trace/hubbar_brook/{}", resolution as i32);
-
-        if Path::new(&wd).exists() {
-            fs::remove_dir_all(&wd).unwrap();
-        }
-        fs::create_dir_all(&wd).unwrap();
-
-        
-        let scaled_dem = format!("{}/scaled_dem.tif", wd);
-        if let Err(e) = rescale_raster(&lidar_dem, &scaled_dem, resolution) {
-            eprintln!("Error: {}", e);
-        }
-
-
-        let breached_fn = format!("{}/breached.tif", wd);
-        if let Err(e) = breach_depressions_raster(&scaled_dem, &breached_fn) {
-            eprintln!("Error: {}", e);
-        }
-
-        let relief_fn = format!("{}/relief.tif", wd);
-        if let Err(e) = smooth_raster(&breached_fn, &relief_fn, 2.0) {
-            eprintln!("Error: {}", e);
-        }
-
-//        let filled_raster = format!("{}/filled.tif", wd);
-//
-//        if let Err(e) = fill_depressions_raster(&relief_fn, &filled_raster) {
-//            eprintln!("Error: {}", e);
-//        }
-//        // scale 1m DEM to 10m using whitebox tools
-//
-        let dinf_fn = format!("{}/dinf.tif", wd);
-        if let Err(e) = dinf_raster(&relief_fn, &dinf_fn) {
-            eprintln!("Error: {}", e);
-        }
-
-        let d8_fn = format!("{}/d8.tif", wd);
-        if let Err(e) = d8_flow_direction_raster(&relief_fn, &d8_fn) {
-            eprintln!("Error: {}", e);
-        }
-
-        /*
-        let d8_accum_fn = format!("{}/d8_accum.tif", wd);
-        if let Err(e) = d8_flowaccum_raster(&d8_fn, &d8_accum_fn) {
-            eprintln!("Error: {}", e);
-        }
-
-        let stream_fn = format!("{}/streams.tif", wd);
-        if let Err(e) = stream_raster(&d8_accum_fn, &stream_fn, 5.0) { // threshold in pixels
-            eprintln!("Error: {}", e);
-        }
-        */
-
-        let network_fn = format!("{}/network.tif", wd);
-        if let Err(e) = valley_raster(&relief_fn, &network_fn) {
-            eprintln!("Error: {}", e);
-        }
-
-
-        let slope_fn = format!("{}/slope.tif", wd);
-        if let Err(e) = slope_raster(&relief_fn, &slope_fn) {
-            eprintln!("Error: {}", e);
-        }
-
-        let aspect_fn = format!("{}/aspect.tif", wd);
-        if let Err(e) = aspect_raster(&relief_fn, &aspect_fn) {
-            eprintln!("Error: {}", e);
-        }
-
-        let dinf_accum_fn = format!("{}/dinf_accum.tif", wd);
-        if let Err(e) = dinf_flowaccum_raster(&dinf_fn, &dinf_accum_fn) {
-            eprintln!("Error: {}", e);
-        }
-        // as whiteboxtools command
-
-        // relief = fill depressions in scaled DEM
-        // flovec = produce d-infinity flow map (equivalent of flow vector map)
-        // fvslop = produce slope
-        // taspec = aspect map
-
-        // should have all the products that would be generated from TOPAZ
-        
-        //let flovec = Raster::<i32>::read("/geodata/weppcloud_runs/offending-ebb/dem/taudem/d8_flow.tif").unwrap();
-        //let relief = Raster::<f64>::read("/geodata/weppcloud_runs/offending-ebb/dem/taudem/fel.tif").unwrap();
-
-        // rlew-rank-folliculitis is a weppcloud project created on the interface
-        // this code is ran on dev.wepp.cloud
-
-        // flovec is DINF flow direction
-        let d8_flovec = Raster::<i32>::read(&d8_fn).unwrap();
-        
-        let flovec = Raster::<f64>::read(&dinf_fn).unwrap();
-
-        // slope
-        let fvslop = Raster::<f64>::read(&slope_fn).unwrap();
-
-        // aspect
-        let taspec = Raster::<f64>::read(&aspect_fn).unwrap();
-
-        // DEM
-        let relief = Raster::<f64>::read(&relief_fn).unwrap();
-
-        // Read the .geojson file in UTM
-        let mut file = File::open("/geodata/locales/hubbar_brook/Hubbar_Brook_EF.Culvert_Database_HBEF_adjusted.geojson").expect("File not found");
-        let mut data = String::new();
-        file.read_to_string(&mut data).expect("Unable to read file");
-
-
-        // Parse the GeoJSON
-
-        let geojson = data.parse::<GeoJson>().expect("Unable to parse GeoJSON");
-
-        let mut i = 1;
-
-        let mut overlap_key = 1000;
-        let mut lookup_table: HashMap<i32, Vec<i32>> = HashMap::new();
-        let mut reverse_lookup: HashMap<Vec<i32>, i32> = HashMap::new();
-    
-        let mut culvert_upareas = d8_flovec.empty_clone();
-
-        match geojson {
-            GeoJson::FeatureCollection(collection) => {
-                for feature in collection.features {
-                    if let Some(properties) = feature.properties {
-                        let id = properties.get("ID").and_then(|v| v.as_str()).unwrap_or_default();
-    
-                        if let Some(geometry) = feature.geometry {
-                            match geometry.value {
-                                Value::Point(coordinates) => {
-
-                                    // get the culvert location from the geometry, not from the attribute table
-                                    let easting = coordinates[0];
-                                    let northing = coordinates[1];
-    
-                                    let (indices, flowpaths) = dinf_trace_catchment_utm(easting, northing, &flovec, &d8_flovec.empty_clone());
-                                    for &indx in &indices {
-                                        let existing_val = culvert_upareas.data[indx];
-                                        if existing_val != 0 {
-                                            let mut vec = Vec::new();
-                                            if existing_val < 300 {
-                                                // First overlap at this location
-                                                vec.push(existing_val);
-                                            } else {
-                                                // Existing overlap area, get the existing set
-                                                if let Some(existing_vec) = lookup_table.get(&existing_val) {
-                                                    vec = existing_vec.clone();
-                                                }
-                                            }
-                                            vec.push(i);
-                                            vec.sort();
-                                            vec.dedup();
-                                
-                                            // Check if this set of overlaps already exists
-                                            if let Some(&existing_key) = reverse_lookup.get(&vec) {
-                                                // Use the existing key
-                                                culvert_upareas.data[indx] = existing_key;
-                                            } else {
-                                                // Create a new key
-                                                lookup_table.insert(overlap_key, vec.clone());
-                                                reverse_lookup.insert(vec, overlap_key);
-                                                culvert_upareas.data[indx] = overlap_key;
-                                                overlap_key += 1;
-                                            }
-                                        } else {
-                                            // No overlap
-                                            culvert_upareas.data[indx] = i;
-                                        }
-                                    }
-
-                                    let (px, py) = utm_to_px(&flovec.geo_transform, easting, northing);
-                                    let tail_index = flovec.xy_to_index(px as usize, py as usize);
-
-                                    let mut _culvert_upareas = d8_flovec.empty_clone();
-
-                                    for &indx in &indices {
-                                        _culvert_upareas.data[indx] = 1;
-                                    }
-
-                                    let culvert_upareas_fn = format!("{}/culvert{}_upareas_i32.tif", wd, i); 
-                                    _culvert_upareas.write(&culvert_upareas_fn);
-
-                                    let culvert_upareas_opt_fn = format!("{}/culvert{}_upareas.tif", wd, i); 
-
-                                    let output = Command::new("gdal_translate")
-                                    .arg("-ot")
-                                    .arg("Byte")
-                                    .arg("-co")
-                                    .arg("COMPRESS=LZW")
-                                    .arg(&culvert_upareas_fn)
-                                    .arg(&culvert_upareas_opt_fn)
-                                    .output()
-                                    .expect("Failed to execute gdal_translate");
-
-                                    if output.status.success() {
-                                        println!("gdal_translate executed successfully");
-                                    } else {
-                                        let error_message = String::from_utf8_lossy(&output.stderr);
-                                        println!("Error executing gdal_translate: {}", error_message);
-                                    }
-
-                                    if let Err(err) = fs::remove_file(&culvert_upareas_fn) {
-                                        println!("Failed to delete file {}: {}", &culvert_upareas_fn, err);
-                                    } else {
-                                        println!("File {} deleted successfully", &culvert_upareas_fn);
-                                    }
-
-                                    let vec_indices: Vec<usize> = indices.iter().cloned().collect();
-
-                                    let mut flowpath_collection = FlowpathCollection  {
-                                        flowpaths: Vec::new(),
-                                        subflows: Some(HashMap::<i32, FlowpathCollection>::new())
-                                    };
-
-                                    let mut max_n = 0;
-                                    for flowpath_vec in flowpaths {
-                                        if flowpath_vec.len() > max_n {
-                                            max_n = flowpath_vec.len();
-                                        }
-                                        flowpath_collection.flowpaths.push(flowpath_from_indices(flowpath_vec, &relief, &d8_flovec, &fvslop, &taspec, i));
-                                    }
-                                        
-                                    let hillslope = flowpath_collection.abstract_hillslope(
-                                        &d8_flovec, &taspec, &vec_indices);
-
-                                    hillslope.write_slp(
-                                        &format!("{}/culvert_hillslope_{}.slp", wd, i), 
-                                        max_points, clip_hillslopes, clip_hillslope_length);
-
-                                        let json_data = json!({
-                                            "ID": id.to_string(),
-                                            "enum": i,
-                                            "easting": easting,
-                                            "northing": northing,
-                                            "n": indices.len(),
-                                            "flowpath_longest_n": max_n,
-                                            "terminal_flowpaths": flowpath_collection.flowpaths.len(),
-                                            "hillslope_pts": hillslope.elevs.len(),
-                                        });
-    
-                                        println!("{}", serde_json::to_string(&json_data).unwrap());
-
-                                        
-                                    i += 1;
-                                },
-                                _ => panic!("Expected a Point geometry, got {:?}", geometry),
-                            }
-                        }
-                    }
-                }
-            },
-            _ => println!("Expected a FeatureCollection"),
-        }
-      
-        let culvert_upareas_fn = format!("{}/culvert_upareas_i32.tif", wd); 
-        culvert_upareas.write(&culvert_upareas_fn);
-
-        let culvert_upareas_opt_fn = format!("{}/culvert_upareas.tif", wd); 
-
-        let output = Command::new("gdal_translate")
-        .arg("-ot")
-        .arg("Int16")
-        .arg("-co")
-        .arg("COMPRESS=LZW")
-        .arg(&culvert_upareas_fn)
-        .arg(&culvert_upareas_opt_fn)
-        .output()
-        .expect("Failed to execute gdal_translate");
-
-        if output.status.success() {
-            println!("gdal_translate executed successfully");
-        } else {
-            let error_message = String::from_utf8_lossy(&output.stderr);
-            println!("Error executing gdal_translate: {}", error_message);
-        }
-
-        if let Err(err) = fs::remove_file(&culvert_upareas_fn) {
-            println!("Failed to delete file {}: {}", &culvert_upareas_fn, err);
-        } else {
-            println!("File {} deleted successfully", &culvert_upareas_fn);
-        }
-
-        // Assuming lookup_table and lookup_table_fn are already defined
-        let lookup_table_fn = format!("{}/culver_lookup.json", wd);
-        write_lookup_table_to_file(&lookup_table, &lookup_table_fn);
-
-        
-    }
-
 }

@@ -278,13 +278,17 @@ impl FlowpathCollection {
         let chn_id: i32 = ((topaz_id as f64 / 10.0).floor() * 10.0) as i32 + 4;
         let chn_summary: &FlowPath = &channels.get_fp_by_topaz_id(chn_id).unwrap();
 
+        let longest_fp = self.get_longest_fp();
+
         // If subcatchment is a source type then we calculate the distance
         // by taking a weighted average based on the length of the flowpaths
         // contained in the subcatchment
         let length: f64;
         let width: f64;
         if topaz_id % 10 == 1 {
-            length = cellsize * self.garbrecht_length();
+            // find length by finding each pixels and then taking the median length of the flowpaths originating from those edge pixels.
+            let edge_flowpaths = self.get_edge_flowpaths();
+            length = flowpaths_median_length(&edge_flowpaths).unwrap_or(0.0);
             width = area / length;
         } else {
             // Otherwise the  width of the subcatchment is determined by the
@@ -714,7 +718,67 @@ impl FlowpathCollection {
 
         Ok(())
     }
+
+    // Method to find edge flowpaths
+    pub fn get_edge_flowpaths(&self) -> Vec<FlowPath> {
+        let mut edge_flowpaths = Vec::new();
+
+        // Iterate over flowpaths with their index for comparison
+        for (i, flowpath) in self.flowpaths.iter().enumerate() {
+            // Assume current flowpath is an edge until proven otherwise
+            let mut is_edge = true;
+            let first_index = match flowpath.indices.first() {
+                Some(&index) => index,
+                None => continue, // Skip if flowpath has no indices
+            };
+
+            // Check against all other flowpaths
+            for (j, other_flowpath) in self.flowpaths.iter().enumerate() {
+                if i == j { continue; } // Skip self-comparison
+
+                // If first_index is found in any other flowpath, it's not an edge
+                if other_flowpath.indices.contains(&first_index) {
+                    is_edge = false;
+                    break; // Early exit if we find a match
+                }
+            }
+
+            // If is_edge remains true, add to result vector
+            if is_edge {
+                edge_flowpaths.push(self.flowpaths[i].clone());
+            }
+        }
+
+        edge_flowpaths
+    }
 }
+
+
+// Method to calculate the median length of flowpaths
+fn flowpaths_median_length(flowpaths: &Vec<FlowPath>) -> Option<f64> {
+    let num_flowpaths = flowpaths.len();
+
+    // Return None if the vector is empty
+    if num_flowpaths == 0 {
+        return None;
+    }
+
+    // Extract the lengths and sort them
+    let mut lengths: Vec<f64> = flowpaths.iter().map(|fp| fp.length).collect();
+    lengths.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+    // Calculate median based on odd or even number of flowpaths
+    if num_flowpaths % 2 == 0 {
+        // Even number of flowpaths: average the two middle elements
+        let mid_right = num_flowpaths / 2;
+        let mid_left = mid_right - 1;
+        Some((lengths[mid_left] + lengths[mid_right]) / 2.0)
+    } else {
+        // Odd number of flowpaths: middle element
+        Some(lengths[num_flowpaths / 2])
+    }
+}
+
 
 #[derive(Debug, Clone)]
 pub struct FlowPath {
