@@ -53,7 +53,7 @@ fn main() {
     // resolutions to test
     // 10 5, 3m
 
-    let resolution = 2.0;
+    let resolution = 5.0;
 
     let wd = format!("/workdir/peridot/tests/fixtures/catchment_trace/hubbar_brook/{}", resolution as i32);
 
@@ -62,7 +62,7 @@ fn main() {
     }
     fs::create_dir_all(&wd).unwrap();
 
-    
+
     let scaled_dem = format!("{}/scaled_dem.tif", wd);
     if let Err(e) = rescale_raster(&lidar_dem, &scaled_dem, resolution) {
         eprintln!("Error: {}", e);
@@ -136,7 +136,7 @@ fn main() {
     // taspec = aspect map
 
     // should have all the products that would be generated from TOPAZ
-    
+
     //let flovec = Raster::<i32>::read("/geodata/weppcloud_runs/offending-ebb/dem/taudem/d8_flow.tif").unwrap();
     //let relief = Raster::<f64>::read("/geodata/weppcloud_runs/offending-ebb/dem/taudem/fel.tif").unwrap();
 
@@ -145,7 +145,7 @@ fn main() {
 
     // flovec is DINF flow direction
     let d8_flovec = Raster::<i32>::read(&d8_fn).unwrap();
-    
+
     let flovec = Raster::<f64>::read(&dinf_fn).unwrap();
 
     // slope
@@ -190,7 +190,7 @@ fn main() {
                                 let northing = coordinates[1];
 
                                 let (indices, flowpaths) = dinf_trace_catchment_utm(easting, northing, &flovec, &d8_flovec.empty_clone());
-                                
+
                                 let (px, py) = utm_to_px(&flovec.geo_transform, easting, northing);
                                 let tail_index = flovec.xy_to_index(px as usize, py as usize);
 
@@ -200,10 +200,10 @@ fn main() {
                                     _culvert_upareas.data[indx] = 1;
                                 }
 
-                                let culvert_upareas_fn = format!("{}/culvert{}_upareas_i32.tif", wd, i); 
+                                let culvert_upareas_fn = format!("{}/culvert{}_upareas_i32.tif", wd, i);
                                 _culvert_upareas.write(&culvert_upareas_fn);
 
-                                let culvert_upareas_opt_fn = format!("{}/culvert{}_upareas.tif", wd, i); 
+                                let culvert_upareas_opt_fn = format!("{}/culvert{}_upareas.tif", wd, i);
 
                                 let output = Command::new("gdal_translate")
                                 .arg("-ot")
@@ -242,7 +242,7 @@ fn main() {
                                     }
                                     flowpath_collection.flowpaths.push(flowpath_from_indices(flowpath_vec, &relief, &d8_flovec, &fvslop, &taspec, i));
                                 }
-                                    
+
                                 let hillslope = flowpath_collection.abstract_hillslope(
                                     &d8_flovec, &taspec, &vec_indices);
 
@@ -259,6 +259,8 @@ fn main() {
                                     "easting": easting,
                                     "northing": northing,
                                     "n": indices.len(),
+                                    "length": hillslope.length,
+                                    "width": hillslope.width,
                                     "flowpath_longest_n": max_n,
                                     "terminal_flowpaths": flowpath_collection.flowpaths.len(),
                                     "hillslope_pts": hillslope.elevs.len(),
@@ -282,5 +284,5 @@ fn main() {
         _ => println!("Expected a FeatureCollection"),
     }
     combine_geojson_files(&uparea_geojson_fns, &format!("{}/culvert_upareas.geojson", wd), &epsg);
-  
 }
+// cargo run --bin hubbarbrook_culvert_delineation

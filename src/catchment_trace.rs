@@ -26,8 +26,8 @@ fn get_upstream_neighbors(current_index: usize, flovec: &Raster<i32>) -> Vec<usi
     // Return a list of neighboring cells that flow into the given cell
     let mut neighbors = Vec::new();
 
-    for neighbor in flovec.get_neighbors(current_index) {    
-        
+    for neighbor in flovec.get_neighbors(current_index) {
+
         let flow_dir = flovec.data[neighbor];
         if flow_dir == 5 {
             continue;
@@ -39,7 +39,7 @@ fn get_upstream_neighbors(current_index: usize, flovec: &Raster<i32>) -> Vec<usi
         let down_x: isize = x as isize + dx;
         let down_y: isize = y as isize + dy;
         let down_indx: usize = flovec.xy_to_index(down_x as usize, down_y as usize);
-        
+
         if down_indx == current_index {
             neighbors.push(neighbor);
         }
@@ -52,7 +52,7 @@ fn get_upstream_neighbors(current_index: usize, flovec: &Raster<i32>) -> Vec<usi
  *         180
  *    270       90
  *        0/360
- *     
+ *
  */
 
  fn unwrap_degrees(angle: f64) -> f64 {
@@ -97,7 +97,7 @@ fn get_dinf_upstream_neighbors(current_index: usize, flovec: &Raster<f64>) -> Ve
                 if is_flow_into_current_cell(flow_dir, angle_to_current) {
                     neighbors.push(neighbor_index);
                 }
-                
+
             }
         }
     }
@@ -260,7 +260,7 @@ pub fn walk_flowpath_to_indx(
     fp_id: i32
 ) -> FlowPath {
     let cellsize: f64 = flovec.cellsize;
-    
+
     let mut current_index: usize = head_index;
     let mut sorted_indices: Vec<usize> = vec![head_index];
     let mut indices_hash: HashSet<usize> = HashSet::new();
@@ -268,7 +268,7 @@ pub fn walk_flowpath_to_indx(
     let mut i = 0;
     loop {
         let flow_dir: i32 = flovec.data[current_index];
-        
+
         // Check if flow_dir is in PATHS and assign dx and dy
         let (dx, dy) = if let Some(&direction) = PATHS.get(&flow_dir) {
             direction
@@ -284,7 +284,7 @@ pub fn walk_flowpath_to_indx(
         if next_x < 0 || next_x >= flovec.width as isize || next_y < 0 || next_y >= flovec.height as isize {
             break;
         }
-        
+
         let next_indx: usize = flovec.xy_to_index(next_x as usize, next_y as usize);
 
         // check if we walked in a circle
@@ -322,7 +322,7 @@ pub fn walk_skid_flowpath(
     fp_id: i32
 ) -> FlowPath {
     let cellsize: f64 = flovec.cellsize;
-    
+
     let mut current_index: usize = head_index;
     let mut sorted_indices: Vec<usize> = vec![head_index];
     let mut indices_hash: HashSet<usize> = HashSet::new();
@@ -331,7 +331,7 @@ pub fn walk_skid_flowpath(
     let mut i = 0;
     loop {
         let flow_dir: i32 = flovec.data[current_index];
-        
+
         // Check if flow_dir is in PATHS and assign dx and dy
         let (dx, dy) = if let Some(&direction) = PATHS.get(&flow_dir) {
             direction
@@ -347,7 +347,7 @@ pub fn walk_skid_flowpath(
         if next_x < 0 || next_x >= flovec.width as isize || next_y < 0 || next_y >= flovec.height as isize {
             break;
         }
-        
+
         let next_indx: usize = flovec.xy_to_index(next_x as usize, next_y as usize);
 
         // check if we walked in a circle
@@ -390,7 +390,7 @@ pub fn flowpath_from_indices(
     sorted_indices.sort_by(|a, b| {
         let elev_a = relief.data[*a];
         let elev_b = relief.data[*b];
-        elev_a.partial_cmp(&elev_b).unwrap()
+        elev_b.partial_cmp(&elev_a).unwrap()
     });
 
     let n: usize = sorted_indices.len();
@@ -417,7 +417,7 @@ pub fn flowpath_from_indices(
             let (x1, y1) = flovec.index_to_xy(sorted_indices[i]);
             let dx: f64 = (x1 as f64 - x0 as f64) * cellsize;
             let dy: f64 = (y1 as f64 - y0 as f64) * cellsize;
-            distances.push((dx.powi(2) + dy.powi(2)).sqrt());
+            distances.push(distances.last().unwrap() + (dx.powi(2) + dy.powi(2)).sqrt());
         }
     }
     let elevation: f64 = elevs[0];

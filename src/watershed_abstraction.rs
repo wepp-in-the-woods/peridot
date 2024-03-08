@@ -369,10 +369,14 @@ impl FlowpathCollection {
         // get indices of subcatchment
         let area = indices.len() as f64 * cellsize2;
 
+        let longest_fp: &FlowPath = self.get_longest_fp();
+
         // If subcatchment is a source type then we calculate the distance
         // by taking a weighted average based on the length of the flowpaths
         // contained in the subcatchment
-        let length: f64 = cellsize * self.garbrecht_length();
+        //let length: f64 = longest_fp.length;
+        let edge_flowpaths = self.get_edge_flowpaths();
+        let length = flowpaths_median_length(&edge_flowpaths).unwrap_or(0.0);
         let width: f64 = area / length;
 
         let mut direction: f64 = 0.0;
@@ -384,7 +388,6 @@ impl FlowpathCollection {
         let (w_slopes, distances, distances_norm): (Vec<f64>, Vec<f64>, Vec<f64>) =
             self.weighted_slope_average_from_fps();
 
-        let longest_fp: &FlowPath = self.get_longest_fp();
         let centroid_px = flovec.centroid_of(vec_indices);
 
         assert!(distances.len() > 1, "distances {:?}", distances);
