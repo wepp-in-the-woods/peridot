@@ -251,7 +251,7 @@ fn main() {
                                     max_points, clip_hillslopes, clip_hillslope_length);
 
                                     // build shapefile with upareas and attribute table of this data
-
+                                let culvert_elevation = relief.data[tail_index];
 
                                 let properties = json!({
                                     "ID": id.to_string(),
@@ -261,6 +261,7 @@ fn main() {
                                     "n": indices.len(),
                                     "length": hillslope.length,
                                     "width": hillslope.width,
+                                    "culvert_elevation": culvert_elevation,
                                     "flowpath_longest_n": max_n,
                                     "terminal_flowpaths": flowpath_collection.flowpaths.len(),
                                     "hillslope_pts": hillslope.elevs.len(),
@@ -283,6 +284,7 @@ fn main() {
         },
         _ => println!("Expected a FeatureCollection"),
     }
-    combine_geojson_files(&uparea_geojson_fns, &format!("{}/culvert_upareas.geojson", wd), &epsg);
+    let sort_key = Some("culvert_elevation");
+    combine_geojson_files(&uparea_geojson_fns, &format!("{}/culvert_upareas.geojson", wd), &epsg, sort_key);
 }
 // cargo run --bin hubbarbrook_culvert_delineation

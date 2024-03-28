@@ -10,7 +10,8 @@ use crate::raster::Raster;
 use serde_json::{Value, json};
 use std::fs;
 
-pub fn combine_geojson_files(filenames: &Vec<String>, output_filename: &str, epsg: &str) -> Result<(), io::Error> {
+pub fn combine_geojson_files(filenames: &Vec<String>, output_filename: &str, epsg: &str, sort_key: Option<&str>)
+    -> Result<(), io::Error> {
     let mut combined_features: Vec<Value> = Vec::new();
 
     // Read each GeoJSON file and combine features
@@ -23,6 +24,15 @@ pub fn combine_geojson_files(filenames: &Vec<String>, output_filename: &str, eps
         }
     }
 
+    // Sort the features by the specified sort_key (if provided) in ascending order
+    if let Some(key) = sort_key {
+        combined_features.sort_by(|a, b| {
+            let a_value = a["properties"][key].as_f64().unwrap_or(f64::MAX);
+            let b_value = b["properties"][key].as_f64().unwrap_or(f64::MAX);
+            a_value.partial_cmp(&b_value).unwrap()
+        });
+    }
+
     // Create the CRS JSON object
     let crs = json!({
         "type": "name",
@@ -30,7 +40,7 @@ pub fn combine_geojson_files(filenames: &Vec<String>, output_filename: &str, eps
             "name": format!("urn:ogc:def:crs:EPSG::{}", epsg)
         }
     });
-    
+
 
     // Create a new GeoJSON FeatureCollection object
     let combined_geojson = json!({
@@ -45,6 +55,7 @@ pub fn combine_geojson_files(filenames: &Vec<String>, output_filename: &str, eps
 
     Ok(())
 }
+
 pub fn polygonize_raster(raster_src_fn: &str, geojson_dst_fn: &str, properties: &Value) -> io::Result<()> {
     let output = Command::new("python3")
         .arg("/usr/bin/gdal_polygonize.py")
