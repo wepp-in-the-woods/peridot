@@ -57,7 +57,8 @@ pub fn abstract_watershed(
     wd: &str,
     max_points: usize,
     clip_hillslopes: bool,
-    clip_hillslope_length: f64
+    clip_hillslope_length: f64,
+    bieger2015_widths: bool
 ) -> std::io::Result<()> {
     env::set_current_dir(&wd).unwrap();
 
@@ -80,7 +81,7 @@ pub fn abstract_watershed(
     let (netw, network) = read_netw_tab("dem/topaz/NETW.TAB", &subwta).unwrap();
     let _ = write_network("watershed/network.txt", &network);
 
-    let channels: FlowpathCollection = walk_channels(&subwta, &relief, &flovec, &fvslop, &taspec, &netw);
+    let channels: FlowpathCollection = walk_channels(&subwta, &relief, &flovec, &fvslop, &taspec, &netw, bieger2015_widths);
     let hillslopes: FlowpathCollection = abstract_subcatchments(&subwta, &relief, &flovec, &fvslop, &taspec, &channels);
 
     let tasks: Vec<Box<dyn FnOnce() -> Result<()> + Send>> = vec![
@@ -1027,7 +1028,8 @@ pub fn walk_channels(
     flovec: &Raster<i32>,
     fvslop: &Raster<f64>,
     taspec: &Raster<f64>,
-    netw:   &HashMap<i32, ChannelNode>
+    netw:   &HashMap<i32, ChannelNode>,
+    bieger2015_widths: bool
 ) -> FlowpathCollection {
 
     let unique_vals = subwta.unique_values();
@@ -1035,7 +1037,7 @@ pub fn walk_channels(
     topaz_ids.sort();
 
     let flowpaths: Vec<FlowPath> = topaz_ids.into_par_iter()
-        .map(|topaz_id| walk_channel(topaz_id, &subwta, &relief, &flovec, &fvslop, &taspec, &netw))
+        .map(|topaz_id| walk_channel(topaz_id, &subwta, &relief, &flovec, &fvslop, &taspec, &netw, bieger2015_widths))
         .collect();
 
     FlowpathCollection {
@@ -1051,7 +1053,8 @@ pub fn walk_channel(topaz_id: i32,
     _flovec: &Raster<i32>,
     fvslop: &Raster<f64>,
     taspec: &Raster<f64>,
-    netw:   &HashMap<i32, ChannelNode>
+    netw:   &HashMap<i32, ChannelNode>,
+    bieger2015_widths: bool
 ) -> FlowPath {
     // get hashset of indices of topaz_id
     let indices: HashSet<usize> = subwta.indices_of(topaz_id);
@@ -1131,7 +1134,16 @@ pub fn walk_channel(topaz_id: i32,
 
     let order = netw.get(&topaz_id).map_or(8, |node| std::cmp::min(node.order, 8));
                      //     1    2    3    4    5    6    7    8
-    let width: f64 = [-1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0, 4.0][order as usize];
+    let mut width: f64 = [-1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0, 4.0][order as usize];
+
+    if bieger2015_widths {
+        let areaup: f64 = netw.get(&topaz_id)
+            .map(|node| node.areaup as f64)
+            .unwrap_or(120.0 as f64);
+        let da: f64 = areaup * cellsize * cellsize * 1e-6;  // area in km^2
+        // width = 2.70 * da.powf(0.352); // USA model https://github.com/rogerlew/wepppy/issues/268
+        width = 1.24 * da.powf(0.435); // Rocky Mountain System
+    }
 
     FlowPath::new(
         sorted_indices,

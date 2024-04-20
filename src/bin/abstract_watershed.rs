@@ -10,7 +10,7 @@ use peridot::watershed_abstraction::abstract_watershed;
 struct Opts {
     /// Path to the watershed directory
     path_to_wd: String,
-    
+
     /// Number of CPU threads
     #[clap(short, long, default_value = "4")]
     ncpu: usize,
@@ -26,6 +26,10 @@ struct Opts {
     /// Clip hillslope length
     #[clap(long, default_value = "300.0")]
     clip_hillslope_length: f64,
+
+    /// Whether to calculate channel widths using Bieger 2015 fits based on uparea
+    #[clap(short, long, default_value = "false")]
+    bieger2015_widths: bool,
 }
 
 fn main() -> Result<(), GdalError> {
@@ -37,7 +41,11 @@ fn main() -> Result<(), GdalError> {
         .unwrap();
 
     let _ = abstract_watershed(
-        &opts.path_to_wd, opts.max_points, opts.clip_hillslopes, opts.clip_hillslope_length);
+        &opts.path_to_wd,
+        opts.max_points,
+        opts.clip_hillslopes,
+        opts.clip_hillslope_length,
+        opts.bieger2015_widths);
 
     Ok(())
 }

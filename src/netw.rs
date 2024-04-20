@@ -40,7 +40,7 @@ fn parse_line(line: &str, subwta: &Raster<i32>) -> Result<ChannelNode, Box<dyn s
     if parts.len() != 24 {
         return Err("Incorrect number of items in line".into());
     }
-    
+
     let mut node = ChannelNode {
         chnum: parts[0].parse().unwrap(),
         order: parts[1].parse().unwrap(),
