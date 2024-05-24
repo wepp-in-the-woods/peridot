@@ -121,5 +121,7 @@ fn main() {
     let seg_links_fn = "tests/fixtures/watershed_abstraction/bearded-flyover/skid_trails/segment_links.txt";
     identify_skid_channels(&seg_skids, &flovec, &relief, &bound, &dst_fn4, &seg_links_fn);
 
-
 }
+
+//> cd /workdir/peridot
+//> RUST_BACKTRACE=1 cargo run --bin north_star_salvage

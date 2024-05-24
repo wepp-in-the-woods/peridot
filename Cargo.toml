@@ -12,15 +12,11 @@ name = "hubbarbrook_culvert_delineation"
 path = "src/scripts/hubbarbrook_culvert_delineation.rs"
 
 [[bin]]
-name = "polygonize_test"
-path = "src/scripts/polygonize_test.rs"
-
-[[bin]]
 name = "north_star_salvage"
 path = "src/scripts/north_star_salvage_logging_delineation.rs"
 
 [dependencies]
-gdal = "0.11"
+gdal = "0.16"
 maplit = "1.0"
 interp = "1.0.1"
 serde = { version = "1.0", features = ["derive"] }
