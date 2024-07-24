@@ -49,3 +49,5 @@ fn main() -> Result<(), GdalError> {
 
     Ok(())
 }
+
+// sudo -u www-data BACK_TRACE=1 ./abstract_watershed /geodata/weppcloud_runs/falling-validity/
