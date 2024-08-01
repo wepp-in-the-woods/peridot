@@ -11,6 +11,7 @@ use std::fs::File;
 use std::path::Path;
 use std::fs;
 use std::io::{Write, Result};
+use std::fs::OpenOptions;
 
 use std::env;
 
@@ -70,7 +71,7 @@ pub fn abstract_watershed(
 
     let _ = std::fs::create_dir_all(Path::new("watershed").join("slope_files"));
     let _ = std::fs::create_dir_all(Path::new("watershed").join("slope_files/hillslopes"));
-//    let _ = std::fs::create_dir_all(Path::new("watershed").join("slope_files/flowpaths"));
+    let _ = std::fs::create_dir_all(Path::new("watershed").join("slope_files/flowpaths"));
 
     let subwta: Raster<i32> = Raster::<i32>::read("dem/topaz/SUBWTA.ARC").unwrap();
     let relief: Raster<f64> = Raster::<f64>::read("dem/topaz/RELIEF.ARC").unwrap();
@@ -90,7 +91,7 @@ pub fn abstract_watershed(
         Box::new(|| hillslopes.write_slps("watershed/slope_files/hillslopes/", max_points, clip_hillslopes, clip_hillslope_length)),
         Box::new(|| hillslopes.write_metadata_to_csv("watershed/hillslopes.csv", &subwta.wgs_transform)),
         Box::new(|| hillslopes.write_subflows_metadata_to_csv("watershed/flowpaths.csv", &subwta.wgs_transform)),
-//        Box::new(|| hillslopes.write_subflow_slps("watershed/slope_files/flowpaths/", max_points, clip_hillslopes, clip_hillslope_length)),
+        Box::new(|| hillslopes.write_subflow_slps("watershed/slope_files/flowpaths/", max_points, clip_hillslopes, clip_hillslope_length)),
         Box::new(|| channels.write_geojson(&subwta, "watershed/channels.geojson")),
     ];
 
@@ -350,7 +351,8 @@ impl FlowpathCollection {
             slope_scalar,
             cellsize,
             elevation,
-            -1
+            -1,
+            -1.0
         )
     }
 
@@ -424,7 +426,8 @@ impl FlowpathCollection {
             slope_scalar,
             cellsize,
             elevation,
-            -1
+            -1,
+            -1.0
         )
     }
 
@@ -486,9 +489,7 @@ impl FlowpathCollection {
     pub fn write_subflow_slps(&self, out_dir: &str, max_points: usize, clip_hillslopes: bool, clip_hillslope_length: f64) -> std::io::Result<()> {
         if let Some(subflows_map) = &self.subflows {
             subflows_map.par_iter().for_each(|(topaz_id, subflowpath_collection)| {
-                let sub_out_dir = format!("{}/{}", out_dir, topaz_id);
-                std::fs::create_dir_all(&sub_out_dir).unwrap();
-                subflowpath_collection.write_slps(&sub_out_dir, max_points, clip_hillslopes, clip_hillslope_length).unwrap();
+                subflowpath_collection.write_fp_slps(&out_dir, max_points).unwrap();
             });
         }
 
@@ -544,7 +545,8 @@ impl FlowpathCollection {
     }
 
     #[allow(dead_code)]
-    pub fn write_slps(&self, out_dir: &str, max_points: usize, clip_hillslopes: bool, clip_hillslope_length: f64) -> std::io::Result<()> {
+    pub fn write_slps(&self, out_dir: &str, max_points: usize, 
+        clip_hillslopes: bool, clip_hillslope_length: f64) -> std::io::Result<()> {
 
         let results: Vec<std::io::Result<()>> = self.flowpaths.par_iter()
             .map(|fp| {
@@ -569,6 +571,38 @@ impl FlowpathCollection {
             result?;
         }
 
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub fn write_fp_slps(&self, out_dir: &str, max_points: usize) -> Result<()> {
+
+        let fname = format!("fps_{}.slps", self.flowpaths[0].topaz_id);
+        let path = format!("{}/{}", out_dir, fname);
+
+        // Create the file before writing
+        let mut file: File = File::create(&path)?;
+
+        for fp in &self.flowpaths {
+            // Ensure the directory exists
+            let path_dir = Path::new(&out_dir);
+            if !path_dir.exists() {
+                std::fs::create_dir_all(path_dir)?;
+            }
+    
+            let mut slp = String::new();
+            slp.push_str(&format!("# fp_{}_{}.slp\n", fp.topaz_id, fp.fp_id));
+            slp.push_str(&format!("# {:?}\n", fp.indices));
+            slp.push_str(&format!("# {:?}\n", fp.distances_norm));
+            let _ = file.write(slp.as_bytes());
+            
+            // Write the SLP file
+            fp._write_slp(&file, max_points, false, 300.0)?;
+
+            // Add a newline after each flowpath
+            file.write(b"\n")?;
+        }
+    
         Ok(())
     }
 
@@ -806,6 +840,7 @@ pub struct FlowPath {
     pub kp: f64,
     pub elevation: f64,
     pub order: i32,
+    pub areaup: f64,
 }
 
 impl Default for FlowPath {
@@ -831,6 +866,7 @@ impl Default for FlowPath {
             kp: -1.0,
             elevation: -1.0,
             order: -1,
+            areaup: -1.0,
         }
     }
 }
@@ -856,6 +892,7 @@ impl FlowPath {
         cellsize: f64,
         elevation: f64,
         order: i32,
+        areaup: f64
     ) -> Self {
         let mut slopes_r = slopes.clone();
         slopes_r.reverse();
@@ -887,6 +924,7 @@ impl FlowPath {
             kp,
             elevation,
             order,
+            areaup
         }
     }
 
@@ -929,6 +967,22 @@ impl FlowPath {
         clip_hillslopes: bool,
         clip_hillslope_length: f64
     ) -> std::io::Result<()> {
+        
+        // Open a file in write mode
+        let mut file = File::create(path)?;
+
+        self._write_slp(&file, max_points, clip_hillslopes, clip_hillslope_length)?;
+
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub fn _write_slp(&self,
+        mut file: &File,
+        max_points: usize,
+        clip_hillslopes: bool,
+        clip_hillslope_length: f64
+    ) -> std::io::Result<()> {
 
         let simplified: (Vec<f64>, Vec<f64>);
         let (d0, s0) = if self.distances_norm.len() > 3 {
@@ -965,16 +1019,13 @@ impl FlowPath {
             }
         }
 
-        // Build the final _slp string
         let slp = format!(
             "2023.3\n{}\n{:.4} {:.1} {:.1}\n{} {:.1}\n{} ",
             nofes, self.aspect, width, self.elevation, npts, length, defs.join(" ")
         );
-
-        // Write to file
-        let mut file = std::fs::File::create(path)?;
+        
         file.write_all(slp.as_bytes())?;
-
+    
         Ok(())
     }
 
@@ -1011,6 +1062,15 @@ impl FlowPath {
         if let Some(number) = serde_json::Number::from_f64(self.cellsize) {
             properties.insert(String::from("cellsize"), serde_json::Value::Number(number));
         }
+
+        if let Some(number) = serde_json::Number::from_f64(self.order as f64) {
+            properties.insert(String::from("order"), serde_json::Value::Number(number));
+        }
+
+        if let Some(number) = serde_json::Number::from_f64(self.areaup) {
+            properties.insert(String::from("areaup"), serde_json::Value::Number(number));
+        }
+
         Feature {
             bbox: None,
             geometry: Some(line_string),
@@ -1132,15 +1192,13 @@ pub fn walk_channel(topaz_id: i32,
         distances_norm.push(d / length);
     }
 
+    let areaup: f64 = netw.get(&topaz_id).map(|node| node.areaup as f64).unwrap() * cellsize * cellsize;  // area in m^2
     let order = netw.get(&topaz_id).map_or(8, |node| std::cmp::min(node.order, 8));
                      //     1    2    3    4    5    6    7    8
     let mut width: f64 = [-1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0, 4.0][order as usize];
 
     if bieger2015_widths {
-        let areaup: f64 = netw.get(&topaz_id)
-            .map(|node| node.areaup as f64)
-            .unwrap_or(120.0 as f64);
-        let da: f64 = areaup * cellsize * cellsize * 1e-6;  // area in km^2
+        let da: f64 = areaup * 1e-6;  // area in km^2
         // width = 2.70 * da.powf(0.352); // USA model https://github.com/rogerlew/wepppy/issues/268
         width = 1.24 * da.powf(0.435); // Rocky Mountain System
     }
@@ -1162,7 +1220,8 @@ pub fn walk_channel(topaz_id: i32,
         slope_scalar,
         cellsize,
         elevation,
-        order
+        order,
+        areaup
     )
 }
 
@@ -1312,7 +1371,8 @@ pub fn walk_flowpath(
         slope_scalar,
         cellsize,
         elevation,
-        -1
+        -1,
+        -1.0
     )
 }
 

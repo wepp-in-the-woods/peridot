@@ -463,7 +463,8 @@ pub fn flowpath_from_indices(
         slope_scalar,
         cellsize,
         elevation,
-        -1
+        -1,
+        -1.0
     )
 }
 
