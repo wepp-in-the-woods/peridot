@@ -20,12 +20,25 @@ This library also contains a catchment tracing algorithm that delineates a singl
 ## build instructions
 
 ```bash
-cargo build --release
+cargo clean
+cargo build --release --features bindgen
 ```
 
-
 ## wepppy integration
-
 ```bash
 cp /workdir/peridot/target/release/abstract_watershed /workdir/wepppy/wepppy/topo/peridot/bin/
+```
+
+## build instructions for wepppy310-env conda environment
+```
+bash
+```
+source set_wepppy310_env.sh
+cargo clean
+cargo build --release --features bindgen
+```
+
+## wepppy310-env integration
+```bash
+cp /workdir/peridot/target/release/abstract_watershed /workdir/wepppy/wepppy/topo/peridot/bin/abstract_watershed.conda310.ub2404
 ```
