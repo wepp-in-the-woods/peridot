@@ -73,12 +73,13 @@ pub fn abstract_watershed(
     let _ = std::fs::create_dir_all(Path::new("watershed").join("slope_files/hillslopes"));
     let _ = std::fs::create_dir_all(Path::new("watershed").join("slope_files/flowpaths"));
 
-    let subwta: Raster<i32> = Raster::<i32>::read("dem/topaz/SUBWTA.ARC").unwrap();
-    let relief: Raster<f64> = Raster::<f64>::read("dem/topaz/RELIEF.ARC").unwrap();
-    let flovec: Raster<i32> = Raster::<i32>::read("dem/topaz/FLOVEC.ARC").unwrap();
-    let fvslop: Raster<f64> = Raster::<f64>::read("dem/topaz/FVSLOP.ARC").unwrap();
-    let taspec: Raster<f64> = Raster::<f64>::read("dem/topaz/TASPEC.ARC").unwrap();
+    let subwta: Raster<i32> = Raster::<i32>::read("dem/topaz/SUBWTA.ARC").unwrap(); // hillslope with topaz_ids file, channels end with 4 (e.g 24, 34, 44), subcatchments end with 1, 2, 3. It starts at 22
+    let relief: Raster<f64> = Raster::<f64>::read("dem/topaz/RELIEF.ARC").unwrap(); // dem
+    let flovec: Raster<i32> = Raster::<i32>::read("dem/topaz/FLOVEC.ARC").unwrap(); // d8 flowvec
+    let fvslop: Raster<f64> = Raster::<f64>::read("dem/topaz/FVSLOP.ARC").unwrap(); // slope
+    let taspec: Raster<f64> = Raster::<f64>::read("dem/topaz/TASPEC.ARC").unwrap(); // aspect
 
+    // this is a ASCII tabular report with channel node connection informaiton
     let (netw, network) = read_netw_tab("dem/topaz/NETW.TAB", &subwta).unwrap();
     let _ = write_network("watershed/network.txt", &network);
 
