@@ -5,6 +5,7 @@ use crate::support::{
     circmean,
     interpolate_slp};
 use crate::netw::{read_netw_tab, ChannelNode, write_network};
+use crate::wbt_netw::{read_wbt_netw_tab, Link};
 use crate::douglas_peucker::douglas_peucker;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
@@ -28,6 +29,22 @@ use serde_json::to_string_pretty;
 use maplit::hashmap;
 
 use lazy_static::lazy_static;
+
+trait LinkAttributes {
+    fn get_areaup(&self) -> f64;
+    fn get_order(&self) -> i32;
+}
+
+impl LinkAttributes for ChannelNode {
+    fn get_areaup(&self) -> f64 { self.areaup }
+    fn get_order(&self) -> i32 {self.order }
+}
+
+impl LinkAttributes for Link {
+    fn get_areaup(&self) -> f64 { self.areaup }
+    fn get_order(&self) -> i32 {self.order }
+}
+
 
 // 1     2     3
 //   \   |   /
@@ -81,6 +98,56 @@ pub fn abstract_watershed(
 
     // this is a ASCII tabular report with channel node connection informaiton
     let (netw, network) = read_netw_tab("dem/topaz/NETW.TAB", &subwta).unwrap();
+    let _ = write_network("watershed/network.txt", &network);
+
+    let channels: FlowpathCollection = walk_channels(&subwta, &relief, &flovec, &fvslop, &taspec, &netw, bieger2015_widths);
+    let hillslopes: FlowpathCollection = abstract_subcatchments(&subwta, &relief, &flovec, &fvslop, &taspec, &channels);
+
+    let tasks: Vec<Box<dyn FnOnce() -> Result<()> + Send>> = vec![
+        Box::new(|| channels.write_channel_slp("watershed/slope_files/channels.slp", max_points)),
+        Box::new(|| channels.write_chn_metadata_to_csv("watershed/channels.csv", &subwta.wgs_transform)),
+        Box::new(|| hillslopes.write_slps("watershed/slope_files/hillslopes/", max_points, clip_hillslopes, clip_hillslope_length)),
+        Box::new(|| hillslopes.write_metadata_to_csv("watershed/hillslopes.csv", &subwta.wgs_transform)),
+        Box::new(|| hillslopes.write_subflows_metadata_to_csv("watershed/flowpaths.csv", &subwta.wgs_transform)),
+        Box::new(|| hillslopes.write_subflow_slps("watershed/slope_files/flowpaths/", max_points, clip_hillslopes, clip_hillslope_length)),
+        Box::new(|| channels.write_geojson(&subwta, "watershed/channels.geojson")),
+    ];
+
+    // Execute tasks in parallel
+    tasks.into_par_iter().map(|f| f()).collect::<Result<Vec<_>>>()?;
+
+    Ok(())
+
+}
+
+#[allow(dead_code)]
+pub fn wbt_abstract_watershed(
+    wd: &str,
+    max_points: usize,
+    clip_hillslopes: bool,
+    clip_hillslope_length: f64,
+    bieger2015_widths: bool
+) -> std::io::Result<()> {
+    env::set_current_dir(&wd).unwrap();
+
+    let watershed_path = Path::new("watershed");
+
+    if watershed_path.exists() {
+        let _ = fs::remove_dir_all(&watershed_path).unwrap();
+    }
+
+    let _ = std::fs::create_dir_all(Path::new("watershed").join("slope_files"));
+    let _ = std::fs::create_dir_all(Path::new("watershed").join("slope_files/hillslopes"));
+    let _ = std::fs::create_dir_all(Path::new("watershed").join("slope_files/flowpaths"));
+
+    let subwta: Raster<i32> = Raster::<i32>::read("dem/wbt/subwta.tif").unwrap(); // hillslope with topaz_ids file, channels end with 4 (e.g 24, 34, 44), subcatchments end with 1, 2, 3. It starts at 22
+    let relief: Raster<f64> = Raster::<f64>::read("dem/wbt/relief.tif").unwrap(); // dem
+    let flovec: Raster<i32> = Raster::<i32>::read("dem/wbt/flovec.tif").unwrap(); // d8 flowvec
+    let fvslop: Raster<f64> = Raster::<f64>::read("dem/wbt/fvslop.tif").unwrap(); // slope
+    let taspec: Raster<f64> = Raster::<f64>::read("dem/wbt/taspec.tif").unwrap(); // aspect
+
+    // this is a ASCII tabular report with channel node connection informaiton
+    let (netw, network) = read_wbt_netw_tab("dem/wbt/netw.tsv").unwrap();
     let _ = write_network("watershed/network.txt", &network);
 
     let channels: FlowpathCollection = walk_channels(&subwta, &relief, &flovec, &fvslop, &taspec, &netw, bieger2015_widths);
@@ -1083,22 +1150,33 @@ impl FlowPath {
 }
 
 #[allow(dead_code)]
-pub fn walk_channels(
+pub fn walk_channels<T: LinkAttributes>(
     subwta: &Raster<i32>,
     relief: &Raster<f64>,
     flovec: &Raster<i32>,
     fvslop: &Raster<f64>,
     taspec: &Raster<f64>,
-    netw:   &HashMap<i32, ChannelNode>,
+    netw:   &HashMap<i32, T>,
     bieger2015_widths: bool
-) -> FlowpathCollection {
+) -> FlowpathCollection
+where
+    T: LinkAttributes + Sync, {
 
     let unique_vals = subwta.unique_values();
     let mut topaz_ids: Vec<i32> = unique_vals.iter().filter(|&&topaz_id| topaz_id % 10 == 4).cloned().collect();
     topaz_ids.sort();
 
     let flowpaths: Vec<FlowPath> = topaz_ids.into_par_iter()
-        .map(|topaz_id| walk_channel(topaz_id, &subwta, &relief, &flovec, &fvslop, &taspec, &netw, bieger2015_widths))
+        .map(|topaz_id| walk_channel(
+            topaz_id, 
+            &subwta, 
+            &relief, 
+            &flovec, 
+            &fvslop, 
+            &taspec, 
+            netw[&topaz_id].get_areaup(), 
+            netw[&topaz_id].get_order(), 
+            bieger2015_widths))
         .collect();
 
     FlowpathCollection {
@@ -1108,13 +1186,15 @@ pub fn walk_channels(
 }
 
 #[allow(dead_code)]
-pub fn walk_channel(topaz_id: i32,
+pub fn walk_channel(
+    topaz_id: i32,
     subwta: &Raster<i32>,
     relief: &Raster<f64>,
     _flovec: &Raster<i32>,
     fvslop: &Raster<f64>,
     taspec: &Raster<f64>,
-    netw:   &HashMap<i32, ChannelNode>,
+    areaup: f64,
+    order: i32,
     bieger2015_widths: bool
 ) -> FlowPath {
     // get hashset of indices of topaz_id
@@ -1193,8 +1273,9 @@ pub fn walk_channel(topaz_id: i32,
         distances_norm.push(d / length);
     }
 
-    let areaup: f64 = netw.get(&topaz_id).map(|node| node.areaup as f64).unwrap() * cellsize * cellsize;  // area in m^2
-    let order = netw.get(&topaz_id).map_or(8, |node| std::cmp::min(node.order, 8));
+//    let areaup: f64 = netw.get(&topaz_id).map(|node| node.areaup as f64).unwrap() * cellsize * cellsize;  // area in m^2
+//    let order = netw.get(&topaz_id).map_or(8, |node| std::cmp::min(node.order, 8));
+
                      //     1    2    3    4    5    6    7    8
     let mut width: f64 = [-1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0, 4.0][order as usize];
 

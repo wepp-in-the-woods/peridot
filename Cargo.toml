@@ -8,15 +8,19 @@ name = "abstract_watershed"
 path = "src/bin/abstract_watershed.rs"
 
 [[bin]]
-name = "hubbarbrook_culvert_delineation"
-path = "src/scripts/hubbarbrook_culvert_delineation.rs"
+name = "wbt_abstract_watershed"
+path = "src/bin/wbt_abstract_watershed.rs"
 
-[[bin]]
-name = "north_star_salvage"
-path = "src/scripts/north_star_salvage_logging_delineation.rs"
+#[[bin]]
+#name = "hubbarbrook_culvert_delineation"
+#path = "src/scripts/hubbarbrook_culvert_delineation.rs"
+
+#[[bin]]
+#name = "north_star_salvage"
+#path = "src/scripts/north_star_salvage_logging_delineation.rs"
 
 [dependencies]
-gdal = "0.16"
+gdal = {version = "0.16", features = ["bindgen"] }
 gdal-sys = { version = "0.9.1", optional = true }
 maplit = "1.0"
 interp = "1.0.1"

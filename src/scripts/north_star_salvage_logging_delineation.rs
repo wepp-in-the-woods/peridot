@@ -112,7 +112,7 @@ fn main() {
         let hillslope = flowpath_collection.abstract_hillslope(
             &flovec, &taspec, &vec_indices);
 
-        hillslope.write_slp(
+        let _ = hillslope.write_slp(
             &format!("{}/skid_hillslope_{}.slp", wd, hill_id), 
             max_points, clip_hillslopes, clip_hillslope_length);
     }

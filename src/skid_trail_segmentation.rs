@@ -627,7 +627,7 @@ pub fn identify_skid_channels(
     }
 
     // Write file
-    skid_chns.write(skid_channel_raster_fn);
+    let _ = skid_chns.write(skid_channel_raster_fn);
 
     // process structure
     let mut structure: HashMap<i32, Vec<i32>> = HashMap::new();

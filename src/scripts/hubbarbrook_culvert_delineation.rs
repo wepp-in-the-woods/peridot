@@ -201,7 +201,7 @@ fn main() {
                                 }
 
                                 let culvert_upareas_fn = format!("{}/culvert{}_upareas_i32.tif", wd, i);
-                                _culvert_upareas.write(&culvert_upareas_fn);
+                                let _ = _culvert_upareas.write(&culvert_upareas_fn);
 
                                 let culvert_upareas_opt_fn = format!("{}/culvert{}_upareas.tif", wd, i);
 
@@ -246,7 +246,7 @@ fn main() {
                                 let hillslope = flowpath_collection.abstract_hillslope(
                                     &d8_flovec, &taspec, &vec_indices);
 
-                                hillslope.write_slp(
+                                let _ = hillslope.write_slp(
                                     &format!("{}/culvert_hillslope_{}.slp", wd, i), 
                                     max_points, clip_hillslopes, clip_hillslope_length);
 
@@ -269,7 +269,7 @@ fn main() {
 
                                 // add properties to the geojson
                                 let culvert_geojson_fn = format!("{}/culvert{}.geojson", wd, i);
-                                polygonize_raster(&culvert_upareas_opt_fn, &culvert_geojson_fn, &properties);
+                                let _ polygonize_raster(&culvert_upareas_opt_fn, &culvert_geojson_fn, &properties);
                                 uparea_geojson_fns.push(culvert_geojson_fn);
 
                                 println!("{}", serde_json::to_string(&properties).unwrap());
@@ -285,6 +285,6 @@ fn main() {
         _ => println!("Expected a FeatureCollection"),
     }
     let sort_key = Some("culvert_elevation");
-    combine_geojson_files(&uparea_geojson_fns, &format!("{}/culvert_upareas.geojson", wd), &epsg, sort_key);
+    let _ = combine_geojson_files(&uparea_geojson_fns, &format!("{}/culvert_upareas.geojson", wd), &epsg, sort_key);
 }
 // cargo run --bin hubbarbrook_culvert_delineation
