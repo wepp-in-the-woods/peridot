@@ -43,7 +43,6 @@ where
 pub fn read_wbt_netw_tab<P: AsRef<Path>>(file_path: P) -> 
     Result<(HashMap<i32, Link>, HashMap<i32, HashSet<i32>>), Box<dyn std::error::Error>> {
 
-
     let file = File::open(file_path)?;
     let reader = BufReader::new(file);
     let mut links = HashMap::new();

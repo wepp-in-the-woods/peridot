@@ -7,12 +7,14 @@ use crate::support::{
 use crate::netw::{read_netw_tab, ChannelNode, write_network};
 use crate::wbt_netw::{read_wbt_netw_tab, Link};
 use crate::douglas_peucker::douglas_peucker;
+use crate::whiteboxtools_wrappers::remap_whitebox_d8_to_topaz;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::path::Path;
 use std::fs;
 use std::io::{Write, Result};
 use std::fs::OpenOptions;
+
 
 use std::env;
 
@@ -142,7 +144,8 @@ pub fn wbt_abstract_watershed(
 
     let subwta: Raster<i32> = Raster::<i32>::read("dem/wbt/subwta.tif").unwrap(); // hillslope with topaz_ids file, channels end with 4 (e.g 24, 34, 44), subcatchments end with 1, 2, 3. It starts at 22
     let relief: Raster<f64> = Raster::<f64>::read("dem/wbt/relief.tif").unwrap(); // dem
-    let flovec: Raster<i32> = Raster::<i32>::read("dem/wbt/flovec.tif").unwrap(); // d8 flowvec
+    let flovec_wbt: Raster<i32> = Raster::<i32>::read("dem/wbt/flovec.tif").unwrap(); // d8 flowvec
+    let flovec = remap_whitebox_d8_to_topaz(&flovec_wbt);
     let fvslop: Raster<f64> = Raster::<f64>::read("dem/wbt/fvslop.tif").unwrap(); // slope
     let taspec: Raster<f64> = Raster::<f64>::read("dem/wbt/taspec.tif").unwrap(); // aspect
 
@@ -167,7 +170,6 @@ pub fn wbt_abstract_watershed(
     tasks.into_par_iter().map(|f| f()).collect::<Result<Vec<_>>>()?;
 
     Ok(())
-
 }
 
 #[allow(dead_code)]
