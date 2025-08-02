@@ -107,14 +107,14 @@ pub fn remap_whitebox_d8_to_topaz(flovec: &Raster<i32>) -> Raster<i32> {
     for i in 0..flovec.data.len() {
         let flow_dir = flovec.data[i];
         let new_flow_dir = match flow_dir {
-            1 => 6,    // East
-            2 => 3,    // Northeast
-            4 => 2,    // North
-            8 => 1,    // Northwest
-            16 => 4,   // West
-            32 => 7,   // Southwest
-            64 => 8,   // South
-            128 => 9,  // Southeast
+            1 => 3,    // East
+            2 => 6,    // Northeast
+            4 => 9,    // North
+            8 => 8,    // Northwest
+            16 => 7,   // West
+            32 => 4,   // Southwest
+            64 => 1,   // South
+            128 => 2,  // Southeast
             _ => 0,    // No flow or undefined
         };
         remapped_flovec.data[i] = new_flow_dir;
@@ -122,6 +122,19 @@ pub fn remap_whitebox_d8_to_topaz(flovec: &Raster<i32>) -> Raster<i32> {
 
     remapped_flovec
 }
+
+// 1     2     3
+//   \   |   /
+//    \  | /
+// 4 <-- o --> 6
+//     / | \
+//   /   |   \
+// 7     8     9
+
+//64	128	1
+//32	0	2
+//16	8	4
+
 
 pub fn rescale_raster(src_fn: &str, dst_fn: &str, resolution: f64) -> io::Result<()> {
     let output = Command::new("gdal_translate")
