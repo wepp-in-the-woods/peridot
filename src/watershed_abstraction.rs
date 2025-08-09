@@ -710,7 +710,7 @@ impl FlowpathCollection {
                 fp.direction.to_string(),
                 fp.order.to_string(),
                 fp.aspect.to_string(),
-                (fp.area_m2() as i32).to_string(),
+                fp.area_m2().to_string(),
                 fp.elevation.to_string(),
                 fp.centroid_px.0.to_string(),
                 fp.centroid_px.1.to_string(),
@@ -1284,7 +1284,7 @@ pub fn walk_channel(
     if bieger2015_widths {
         let da: f64 = areaup * 1e-6;  // area in km^2
         // width = 2.70 * da.powf(0.352); // USA model https://github.com/rogerlew/wepppy/issues/268
-        width = 1.24 * da.powf(0.435); // Rocky Mountain System
+        width = (1.24 * da.powf(0.435)).max(0.01); // Rocky Mountain System
     }
 
     FlowPath::new(
