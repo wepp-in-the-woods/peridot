@@ -1242,7 +1242,10 @@ pub fn walk_channel(
         rad_aspects.push(deg_aspect.to_radians());
     }
 
-    let aspect: f64 = circmean(rad_aspects.as_slice()).to_degrees();
+    let mut aspect: f64 = circmean(rad_aspects.as_slice()).to_degrees();
+    if (aspect < 0.0) {
+        aspect += 360.0; // ensure aspect is in [0, 360) range
+    }
 
     let (centroid_x, centroid_y) = subwta.centroid_of(&indices);
 
