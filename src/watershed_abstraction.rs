@@ -98,7 +98,7 @@ pub fn abstract_watershed(
     let fvslop: Raster<f64> = Raster::<f64>::read("dem/topaz/FVSLOP.ARC").unwrap(); // slope
     let taspec: Raster<f64> = Raster::<f64>::read("dem/topaz/TASPEC.ARC").unwrap(); // aspect
 
-    // this is a ASCII tabular report with channel node connection informaiton
+    // this is a ASCII tabular report with channel node connection information
     let (netw, network) = read_netw_tab("dem/topaz/NETW.TAB", &subwta).unwrap();
     let _ = write_network("watershed/network.txt", &network);
 
@@ -570,7 +570,7 @@ impl FlowpathCollection {
     pub fn write_channel_slp(&self, path: &str, max_points: usize) -> std::io::Result<()> {
 
         let mut all_strings = Vec::new();
-        all_strings.push(format!("2023.1\n{}\n", &self.flowpaths.len()));
+        all_strings.push(format!("2025.8\n{}\n", &self.flowpaths.len()));
 
         for fp in self.flowpaths.iter().rev() {
 
@@ -1287,7 +1287,11 @@ pub fn walk_channel(
     if bieger2015_widths {
         let da: f64 = areaup * 1e-6;  // area in km^2
         // width = 2.70 * da.powf(0.352); // USA model https://github.com/rogerlew/wepppy/issues/268
-        width = (1.24 * da.powf(0.435)).max(0.01); // Rocky Mountain System
+        width = 1.24 * da.powf(0.435); // Rocky Mountain System
+
+        if width < 0.324017 {
+            width = 0.324017;
+        }
     }
 
     FlowPath::new(

@@ -41,6 +41,8 @@ fn parse_line(line: &str, subwta: &Raster<i32>) -> Result<ChannelNode, Box<dyn s
         return Err("Incorrect number of items in line".into());
     }
 
+    let areaup: f64 = parts[11].parse::<f64>().unwrap() * subwta.cellsize * subwta.cellsize; // area in m^2
+
     let mut node = ChannelNode {
         chnum: parts[0].parse().unwrap(),
         order: parts[1].parse().unwrap(),
@@ -53,7 +55,7 @@ fn parse_line(line: &str, subwta: &Raster<i32>) -> Result<ChannelNode, Box<dyn s
         chnlen: parts[8].parse().unwrap(),
         elevvup: parts[9].parse().unwrap(),
         elevdn: parts[10].parse().unwrap(),
-        areaup: parts[11].parse().unwrap(),
+        areaup: areaup,
         areadn1: parts[12].parse().unwrap(),
         areadn: parts[13].parse().unwrap(),
         dda: parts[14].parse().unwrap(),
@@ -119,7 +121,7 @@ pub fn read_netw_tab(file_path: &str, subwta: &Raster<i32>) -> Result<(HashMap<i
 
     let mut data : HashMap<i32, ChannelNode>= HashMap::new();
     let mut network: HashMap<i32, HashSet<i32>> = HashMap::new();
-    
+
     for (i, line_result) in reader.lines().enumerate() {
         let line = line_result?;
         
