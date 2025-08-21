@@ -41,7 +41,11 @@ fn parse_line(line: &str, subwta: &Raster<i32>) -> Result<ChannelNode, Box<dyn s
         return Err("Incorrect number of items in line".into());
     }
 
-    let areaup: f64 = parts[11].parse::<f64>().unwrap() * subwta.cellsize * subwta.cellsize; // area in m^2
+    let cellsize2: f64 = subwta.cellsize * subwta.cellsize;
+    let areaup: f64 = parts[11].parse::<f64>().unwrap() * cellsize2; // area in m^2
+    let areadn1: f64 = parts[12].parse::<f64>().unwrap() * cellsize2; // area in m^2
+    let areadn: f64 = parts[13].parse::<f64>().unwrap() * cellsize2; // area in m^2
+    let dda: f64 = parts[14].parse::<f64>().unwrap() * cellsize2; // direct drainage area in m^2
 
     let mut node = ChannelNode {
         chnum: parts[0].parse().unwrap(),
@@ -56,9 +60,9 @@ fn parse_line(line: &str, subwta: &Raster<i32>) -> Result<ChannelNode, Box<dyn s
         elevvup: parts[9].parse().unwrap(),
         elevdn: parts[10].parse().unwrap(),
         areaup: areaup,
-        areadn1: parts[12].parse().unwrap(),
-        areadn: parts[13].parse().unwrap(),
-        dda: parts[14].parse().unwrap(),
+        areadn1: areadn1,
+        areadn: areadn,
+        dda: dda,
         node1: parts[15].parse().unwrap(),
         node2: parts[16].parse().unwrap(),
         node3: parts[17].parse().unwrap(),
