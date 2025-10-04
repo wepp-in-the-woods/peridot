@@ -11,6 +11,10 @@ path = "src/bin/abstract_watershed.rs"
 name = "wbt_abstract_watershed"
 path = "src/bin/wbt_abstract_watershed.rs"
 
+[[bin]]
+name = "sub_fields_abstraction"
+path = "src/bin/sub_fields_abstraction.rs"
+
 #[[bin]]
 #name = "hubbarbrook_culvert_delineation"
 #path = "src/scripts/hubbarbrook_culvert_delineation.rs"

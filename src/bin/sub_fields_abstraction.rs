@@ -1,0 +1,60 @@
+extern crate clap;
+
+use clap::Parser;
+use rayon::ThreadPoolBuilder;
+use std::io;
+
+use peridot::wbt_sub_fields_abstraction;
+
+#[derive(Parser)]
+struct Opts {
+    /// Path to the WEPPcloud run directory
+    path_to_wd: String,
+
+    /// Number of CPU threads
+    #[clap(short, long, default_value = "4")]
+    ncpu: usize,
+
+    /// Maximum number of points
+    #[clap(short, long, default_value = "99")]
+    max_points: usize,
+
+    /// Whether to clip hillslopes or not
+    #[clap(short, long, default_value = "false")]
+    clip_hillslopes: bool,
+
+    /// Clip hillslope length
+    #[clap(long, default_value = "300.0")]
+    clip_hillslope_length: f64,
+
+    /// Minimum area threshold (m^2) for retaining sub-fields
+    #[clap(long = "sub-field-min-area-threshold-m2", default_value = "0.0")]
+    sub_field_min_area_threshold_m2: f64,
+
+    /// Path to the rasterised field boundaries relative to the run directory
+    #[clap(long = "field-raster", default_value = "ag_fields/field_boundaries.tif")]
+    field_raster: String,
+
+    /// Output directory for sub-field artifacts relative to the run directory
+    #[clap(long = "output-dir", default_value = "ag_fields/sub_fields")]
+    output_dir: String,
+}
+
+fn main() -> io::Result<()> {
+    let opts: Opts = Opts::parse();
+
+    ThreadPoolBuilder::new()
+        .num_threads(opts.ncpu)
+        .build_global()
+        .expect("Failed to initialise Rayon thread pool");
+
+    wbt_sub_fields_abstraction(
+        &opts.path_to_wd,
+        opts.max_points,
+        opts.clip_hillslopes,
+        opts.clip_hillslope_length,
+        opts.sub_field_min_area_threshold_m2,
+        &opts.field_raster,
+        &opts.output_dir,
+    )
+}

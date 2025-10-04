@@ -173,6 +173,112 @@ pub fn wbt_abstract_watershed(
 }
 
 #[allow(dead_code)]
+pub fn wbt_sub_fields_abstraction(
+    wd: &str,
+    max_points: usize,
+    clip_hillslopes: bool,
+    clip_hillslope_length: f64,
+    sub_field_min_area_threshold_m2: f64,
+    field_raster: &str, // ag_fields/field_boundaries.tif
+    output_dir: &str,   // ag_fields/sub_fields
+) -> std::io::Result<()> {
+    env::set_current_dir(&wd).unwrap();
+
+    let watershed_path = Path::new(output_dir);
+
+    if watershed_path.exists() {
+        let _ = fs::remove_dir_all(&watershed_path).unwrap();
+    }
+
+    let _ = std::fs::create_dir_all(Path::new(output_dir).join("slope_files"));
+    let _ = std::fs::create_dir_all(Path::new(output_dir).join("slope_files/flowpaths"));
+
+    let subwta: Raster<i32> = Raster::<i32>::read("dem/wbt/subwta.tif").unwrap(); // hillslope with topaz_ids file, channels end with 4 (e.g 24, 34, 44), subcatchments end with 1, 2, 3. It starts at 22
+    let field: Raster<i32> = Raster::<i32>::read(field_raster).unwrap(); // rasterized field boundaries
+    let relief: Raster<f64> = Raster::<f64>::read("dem/wbt/relief.tif").unwrap(); // dem
+    let flovec_wbt: Raster<i32> = Raster::<i32>::read("dem/wbt/flovec.tif").unwrap(); // d8 flowvec
+    let flovec = remap_whitebox_d8_to_topaz(&flovec_wbt);
+    let fvslop: Raster<f64> = Raster::<f64>::read("dem/wbt/fvslop.tif").unwrap(); // slope
+    let taspec: Raster<f64> = Raster::<f64>::read("dem/wbt/taspec.tif").unwrap(); // aspect
+
+    let mut intersection_subwta = subwta.clone();
+
+    // iterate over field and relief rasters
+    let mut fake_id: i32 = 1;
+    let mut fake_topaz_id_lookup: HashMap<(i32, i32), i32> = HashMap::new();
+
+    for i in 0..subwta.data.len() {
+
+        let field_id = field.data[i];
+        let topaz_id = subwta.data[i];
+
+        if field_id == 0 || topaz_id == 0 {
+            intersection_subwta.data[i] = 0;
+            continue;
+        }
+
+        let key = (field_id, topaz_id);
+        if (fake_topaz_id_lookup.contains_key(&key)) {
+            intersection_subwta.data[i] = *fake_topaz_id_lookup.get(&key).unwrap();
+        } else {
+            fake_id += 1;
+            fake_topaz_id_lookup.insert(key, fake_id);
+            intersection_subwta.data[i] = fake_id;
+        }
+    }
+
+    let hillslopes: FlowpathCollection = abstract_subfieldcatchments(&intersection_subwta, &relief, &flovec, &fvslop, &taspec);
+
+    let tasks: Vec<Box<dyn FnOnce() -> Result<()> + Send>> = vec![
+        Box::new(|| hillslopes.write_slps(&format!("{}/slope_files/hillslopes/", output_dir), max_points, clip_hillslopes, clip_hillslope_length)),
+        Box::new(|| hillslopes.write_metadata_to_csv(&format!("{}/hillslopes.csv", output_dir), &subwta.wgs_transform)),
+        Box::new(|| hillslopes.write_subflows_metadata_to_csv(&format!("{}/flowpaths.csv", output_dir), &subwta.wgs_transform)),
+        Box::new(|| hillslopes.write_subflow_slps(&format!("{}/slope_files/flowpaths/", output_dir), max_points, clip_hillslopes, clip_hillslope_length)),
+    ];
+
+    // Execute tasks in parallel
+    tasks.into_par_iter().map(|f| f()).collect::<Result<Vec<_>>>()?;
+
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub fn abstract_subfieldcatchments(
+    intersection_subwta: &Raster<i32>,
+    relief: &Raster<f64>,
+    flovec: &Raster<i32>,
+    fvslop: &Raster<f64>,
+    taspec: &Raster<f64>
+) -> FlowpathCollection {
+
+    let unique: HashSet<i32> = intersection_subwta.unique_values();
+
+    let fake_topaz_ids: Vec<i32> = unique.into_iter().collect();
+    let mut hillslope_abstractions: FlowpathCollection = FlowpathCollection {
+        flowpaths: Vec::new(),
+        subflows: Some(HashMap::<i32, FlowpathCollection>::new())
+    };
+
+    let results: Vec<(FlowPath, i32, FlowpathCollection)> = fake_topaz_ids.into_par_iter()
+        .map(|fake_topaz_id| {
+            let flowpaths: FlowpathCollection = walk_flowpaths(fake_topaz_id, &intersection_subwta, &relief, &flovec, &fvslop, &taspec);
+            let subcatchment: FlowPath = flowpaths.abstract_subfieldcatchment(
+                &intersection_subwta,
+                &taspec);
+            (subcatchment, fake_topaz_id, flowpaths)
+        })
+        .collect();
+
+    for (subcatchment, fake_topaz_id, flowpaths) in results {
+        hillslope_abstractions.flowpaths.push(subcatchment);
+        hillslope_abstractions.subflows.as_mut().unwrap().insert(fake_topaz_id, flowpaths);
+    }
+
+    hillslope_abstractions
+}
+
+
+#[allow(dead_code)]
 pub fn abstract_subcatchments(
     subwta: &Raster<i32>,
     relief: &Raster<f64>,
@@ -189,6 +295,7 @@ pub fn abstract_subcatchments(
         subflows: Some(HashMap::<i32, FlowpathCollection>::new())
     };
 
+    // iterate over field and relief rasters
     let results: Vec<(FlowPath, i32, FlowpathCollection)> = topaz_ids.into_par_iter()
         .map(|topaz_id| {
             let flowpaths: FlowpathCollection = walk_flowpaths(topaz_id, &subwta, &relief, &flovec, &fvslop, &taspec);
@@ -413,6 +520,81 @@ impl FlowpathCollection {
             w_slopes,
             elevs,
             topaz_id,
+            -1,
+            length,
+            width,
+            aspect,
+            direction,
+            slope_scalar,
+            cellsize,
+            elevation,
+            -1,
+            -1.0
+        )
+    }
+
+    #[allow(dead_code)]
+    pub fn abstract_subfieldcatchment(&self,
+        intersection_subwta: &Raster<i32>,
+        taspec: &Raster<f64>
+    ) -> FlowPath {
+
+
+        let cellsize: f64 = intersection_subwta.cellsize;
+        let cellsize2: f64 = cellsize * cellsize;
+        let fake_topaz_id: i32 = self.flowpaths[0].topaz_id;
+
+        // get indices of subcatchment
+        let indices: HashSet<usize> = intersection_subwta.indices_of(fake_topaz_id);
+        let area = indices.len() as f64 * cellsize2;
+
+        let longest_fp = self.get_longest_fp();
+
+        let length: f64;
+        let width: f64;
+        
+        // find length by finding each pixels and then taking the median length of the flowpaths originating from those edge pixels.
+        let edge_flowpaths = self.get_edge_flowpaths();
+        length = flowpaths_median_length(&edge_flowpaths).unwrap_or(0.0);
+        width = area / length;
+
+        let direction : f64 = longest_fp.direction;
+
+        // determine aspect
+        let aspect: f64 = taspec.determine_aspect(&indices);
+
+        // calculate weighted slope from flowpaths
+        let (w_slopes, distances, distances_norm): (Vec<f64>, Vec<f64>, Vec<f64>) =
+            self.weighted_slope_average_from_fps();
+
+        let longest_fp: &FlowPath = self.get_longest_fp();
+        let centroid_px = intersection_subwta.centroid_of(&indices);
+
+        assert!(distances.len() > 1, "distances {:?}", distances);
+
+        // iterate over distances and slopes and calculate elevations
+        // for each point
+        let mut elevs: Vec<f64> = vec![longest_fp.elevation];
+        for i in 0..distances.len() - 1 {
+            let dx: f64 = distances[i+1] - distances[i];
+            let dy: f64 = w_slopes[i];
+            let elevation: f64 = elevs[i] - (dx * dy);
+            elevs.push(elevation);
+        }
+
+        let slope_scalar: f64 = (elevs[0] - elevs[elevs.len() - 1]) / length;
+        let elevation: f64 = elevs[0];
+
+        let vec_indices: Vec<usize> = indices.into_iter().collect();
+        FlowPath::new(
+            vec_indices,
+            longest_fp.head,
+            longest_fp.tail,
+            (centroid_px.0 as i32, centroid_px.1 as i32),
+            distances_norm,
+            w_slopes,
+            elevs,
+            fake_topaz_id,
             -1,
             length,
             width,
