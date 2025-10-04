@@ -1,8 +1,3 @@
-use crate::flowpaths::{FlowPath, FlowpathCollection};
-use crate::raster::Raster;
-use crate::support::{circmean, compute_direction};
-use crate::netw::{read_netw_tab, write_network, ChannelNode};
-use crate::wbt_netw::Link;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
@@ -11,6 +6,14 @@ use std::env;
 
 use rayon::prelude::*;
 use lazy_static::lazy_static;
+
+use crate::raster::Raster;
+use crate::support::{circmean, compute_direction};
+use crate::netw::{read_netw_tab, write_network, ChannelNode};
+use crate::wbt_netw::Link;
+use crate::flowpath::FlowPath;
+use crate::flowpath_collection::FlowpathCollection;
+
 
 pub trait LinkAttributes {
     fn get_areaup(&self) -> f64;

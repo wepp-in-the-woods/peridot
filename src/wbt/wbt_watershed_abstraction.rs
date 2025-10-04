@@ -6,7 +6,7 @@ use std::path::Path;
 use rayon::prelude::*;
 
 use crate::d8_wbt_to_topaz::remap_whitebox_d8_to_topaz;
-use crate::flowpaths::FlowpathCollection;
+use crate::flowpath_collection::FlowpathCollection;
 use crate::netw::write_network;
 use crate::raster::Raster;
 use crate::watershed_abstraction::{abstract_subcatchments, walk_channels};

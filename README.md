@@ -128,7 +128,8 @@ peridot/src
 │   ├── mod.rs
 │   └── netw.rs
 ├── watershed_abstraction
-│   ├── flowpaths.rs
+│   ├── flowpath.rs
+│   ├── flowpath_collection.rs
 │   ├── mod.rs
 │   └── watershed_abstraction.rs
 └── wbt

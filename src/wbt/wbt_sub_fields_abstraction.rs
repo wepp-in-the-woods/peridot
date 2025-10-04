@@ -8,9 +8,11 @@ use std::sync::Arc;
 use rayon::prelude::*;
 
 use crate::d8_wbt_to_topaz::remap_whitebox_d8_to_topaz;
-use crate::flowpaths::{FlowPath, FlowpathCollection};
+use crate::flowpath::FlowPath;
+use crate::flowpath_collection::FlowpathCollection;
 use crate::raster::Raster;
 use crate::watershed_abstraction::walk_flowpaths;
+
 #[allow(dead_code)]
 pub fn wbt_sub_fields_abstraction(
     wd: &str,

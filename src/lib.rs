@@ -17,4 +17,5 @@ pub use wbt::wbt_netw;
 pub use wbt::wbt_sub_fields_abstraction;
 pub use wbt::wbt_watershed_abstraction;
 
-pub use watershed_abstraction::flowpaths as flowpaths;
+pub use watershed_abstraction::flowpath as flowpath;
+pub use watershed_abstraction::flowpath_collection as flowpath_collection;
