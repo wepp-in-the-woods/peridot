@@ -14,6 +14,7 @@ use std::path::Path;
 use std::fs;
 use std::io::{Write, Result};
 use std::fs::OpenOptions;
+use std::sync::Arc;
 
 
 use std::env;
@@ -251,13 +252,63 @@ pub fn wbt_sub_fields_abstraction(
         }
     }
 
-    let hillslopes: FlowpathCollection = abstract_subfieldcatchments(&intersection_subwta, &relief, &flovec, &fvslop, &taspec);
+    let hillslopes = Arc::new(abstract_subfieldcatchments(&intersection_subwta, &relief, &flovec, &fvslop, &taspec));
+
+    let fake_topaz_id_lookup = Arc::new(fake_topaz_id_lookup);
 
     let tasks: Vec<Box<dyn FnOnce() -> Result<()> + Send>> = vec![
-        Box::new(|| hillslopes.write_field_slps(&format!("{}/slope_files/hillslopes/", output_dir), max_points, clip_hillslopes, clip_hillslope_length, fake_topaz_id_lookup)),
-        Box::new(|| hillslopes.write_field_metadata_to_csv(&format!("{}/hillslopes.csv", output_dir), &subwta.wgs_transform, fake_topaz_id_lookup)),
-        Box::new(|| hillslopes.write_field_subflows_metadata_to_csv(&format!("{}/flowpaths.csv", output_dir), &subwta.wgs_transform, fake_topaz_id_lookup)),
-        Box::new(|| hillslopes.write_field_subflow_slps(&format!("{}/slope_files/flowpaths/", output_dir), max_points, clip_hillslopes, clip_hillslope_length, fake_topaz_id_lookup)),
+        {
+            let lookup = Arc::clone(&fake_topaz_id_lookup);
+            let hillslopes = Arc::clone(&hillslopes);
+            let out_dir = format!("{}/slope_files/hillslopes/", output_dir);
+            Box::new(move || {
+                hillslopes.write_field_slps(
+                    &out_dir,
+                    max_points,
+                    clip_hillslopes,
+                    clip_hillslope_length,
+                    lookup.as_ref(),
+                )
+            })
+        },
+        {
+            let lookup = Arc::clone(&fake_topaz_id_lookup);
+            let hillslopes = Arc::clone(&hillslopes);
+            let csv_path = format!("{}/hillslopes.csv", output_dir);
+            Box::new(move || {
+                hillslopes.write_field_metadata_to_csv(
+                    &csv_path,
+                    &subwta.wgs_transform,
+                    lookup.as_ref(),
+                )
+            })
+        },
+        {
+            let lookup = Arc::clone(&fake_topaz_id_lookup);
+            let hillslopes = Arc::clone(&hillslopes);
+            let csv_path = format!("{}/flowpaths.csv", output_dir);
+            Box::new(move || {
+                hillslopes.write_field_subflows_metadata_to_csv(
+                    &csv_path,
+                    &subwta.wgs_transform,
+                    lookup.as_ref(),
+                )
+            })
+        },
+        {
+            let lookup = Arc::clone(&fake_topaz_id_lookup);
+            let hillslopes = Arc::clone(&hillslopes);
+            let out_dir = format!("{}/slope_files/flowpaths/", output_dir);
+            Box::new(move || {
+                hillslopes.write_field_subflow_slps(
+                    &out_dir,
+                    max_points,
+                    clip_hillslopes,
+                    clip_hillslope_length,
+                    lookup.as_ref(),
+                )
+            })
+        },
     ];
 
     // Execute tasks in parallel
@@ -363,6 +414,21 @@ impl FlowpathCollection {
             }
         }
         &self.flowpaths[max_index]
+    }
+
+    fn resolve_field_lookup(
+        fake_topaz_id: i32,
+        fake_topaz_id_lookup: &HashMap<(i32, i32), i32>,
+    ) -> Option<(i32, i32)> {
+        fake_topaz_id_lookup
+            .iter()
+            .find_map(|(&(field_id, topaz_id), &v)| {
+                if v == fake_topaz_id {
+                    Some((field_id, topaz_id))
+                } else {
+                    None
+                }
+            })
     }
 
     /// calculates the length of a subcatchment from the flowpaths
@@ -852,30 +918,24 @@ impl FlowpathCollection {
 
     #[allow(dead_code)]
     pub fn write_field_slps(
-        &self, out_dir: &str, 
-        max_points: usize, 
-        clip_hillslopes: bool, 
+        &self,
+        out_dir: &str,
+        max_points: usize,
+        clip_hillslopes: bool,
         clip_hillslope_length: f64,
-        fake_topaz_id_lookup: HashMap<(i32, i32), i32>
+        fake_topaz_id_lookup: &HashMap<(i32, i32), i32>,
     ) -> std::io::Result<()> {
-
-        
-        let results: Vec<std::io::Result<()>> = self.flowpaths.par_iter()
-            .map(|fp| {
-                let fname;
-                let (field_id, topaz_id) = fake_topaz_id_lookup.iter()
-                    .find(|&(_, &v)| v == fp.topaz_id)
-                    .map(|(k, _)| *k)
-                    .unwrap_or((-1, -1));
-                fname = format!("field_{}_{}.slp", field_id, topaz_id);
+        for fp in &self.flowpaths {
+            if let Some((field_id, topaz_id)) = Self::resolve_field_lookup(fp.topaz_id, fake_topaz_id_lookup)
+            {
+                let fname = if fp.fp_id == -1 {
+                    format!("field_{}_{}.slp", field_id, topaz_id)
+                } else {
+                    format!("field_{}_{}_fp_{}.slp", field_id, topaz_id, fp.fp_id)
+                };
                 let path = format!("{}/{}", out_dir, fname);
-                fp.write_slp(&path, max_points, clip_hillslopes, clip_hillslope_length)
-            })
-            .collect();
-
-        // Check for any errors
-        for result in results {
-            result?;
+                fp.write_slp(&path, max_points, clip_hillslopes, clip_hillslope_length)?;
+            }
         }
 
         Ok(())
@@ -910,6 +970,37 @@ impl FlowpathCollection {
             file.write(b"\n")?;
         }
     
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub fn write_field_subflow_slps(
+        &self,
+        out_dir: &str,
+        max_points: usize,
+        clip_hillslopes: bool,
+        clip_hillslope_length: f64,
+        fake_topaz_id_lookup: &HashMap<(i32, i32), i32>,
+    ) -> std::io::Result<()> {
+        if let Some(subflows_map) = &self.subflows {
+            for (fake_topaz_id, subflow_collection) in subflows_map {
+                if let Some((field_id, topaz_id)) =
+                    Self::resolve_field_lookup(*fake_topaz_id, fake_topaz_id_lookup)
+                {
+                    for fp in &subflow_collection.flowpaths {
+                        let fname = format!(
+                            "field_{}_{}_fp_{}.slp",
+                            field_id, topaz_id, fp.fp_id
+                        );
+                        let path = format!("{}/{}", out_dir, fname);
+                        fp.write_slp(&path, max_points, clip_hillslopes, clip_hillslope_length)?;
+                    }
+                }
+            }
+        } else {
+            panic!("Unexpected None in subflows!");
+        }
+
         Ok(())
     }
 
@@ -1008,6 +1099,64 @@ impl FlowpathCollection {
     }
 
     #[allow(dead_code)]
+    pub fn write_field_metadata_to_csv(
+        &self,
+        path: &str,
+        wgs_transform: &[f64; 4],
+        fake_topaz_id_lookup: &HashMap<(i32, i32), i32>,
+    ) -> std::io::Result<()> {
+        let file = File::create(path).unwrap();
+        let mut writer = csv::Writer::from_writer(file);
+
+        writer
+            .write_record([
+                "field_id",
+                "subwta_id",
+                "sub_field_id",
+                "slope_scalar",
+                "length",
+                "width",
+                "direction",
+                "aspect",
+                "area",
+                "elevation",
+                "centroid_px",
+                "centroid_py",
+                "centroid_lon",
+                "centroid_lat",
+            ])
+            .unwrap();
+
+        for fp in &self.flowpaths {
+            if let Some((field_id, topaz_id)) = Self::resolve_field_lookup(fp.topaz_id, fake_topaz_id_lookup)
+            {
+                let (lon, lat) = px_to_wgs(wgs_transform, fp.centroid_px.0, fp.centroid_px.1);
+
+                let record = [
+                    field_id.to_string(),
+                    topaz_id.to_string(),
+                    fp.topaz_id.to_string(),
+                    fp.slope_scalar.to_string(),
+                    fp.length.to_string(),
+                    fp.width.to_string(),
+                    fp.direction.to_string(),
+                    fp.aspect.to_string(),
+                    fp.area_m2().to_string(),
+                    fp.elevation.to_string(),
+                    fp.centroid_px.0.to_string(),
+                    fp.centroid_px.1.to_string(),
+                    lon.to_string(),
+                    lat.to_string(),
+                ];
+
+                writer.write_record(record).unwrap();
+            }
+        }
+
+        Ok(())
+    }
+
+    #[allow(dead_code)]
     pub fn write_subflows_metadata_to_csv(&self, path: &str, wgs_transform: &[f64; 4]) -> std::io::Result<()> {
         let file = File::create(path).unwrap();
         let mut writer = csv::Writer::from_writer(file);
@@ -1058,6 +1207,78 @@ impl FlowpathCollection {
             }
         } else {
             // This will panic if the None case occurs
+            panic!("Unexpected None in subflows!");
+        }
+
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub fn write_field_subflows_metadata_to_csv(
+        &self,
+        path: &str,
+        wgs_transform: &[f64; 4],
+        fake_topaz_id_lookup: &HashMap<(i32, i32), i32>,
+    ) -> std::io::Result<()> {
+        let file = File::create(path).unwrap();
+        let mut writer = csv::Writer::from_writer(file);
+
+        writer
+            .write_record([
+                "field_id",
+                "subwta_id",
+                "sub_field_id",
+                "topaz_id",
+                "fp_id",
+                "slope_scalar",
+                "length",
+                "width",
+                "direction",
+                "aspect",
+                "area",
+                "elevation",
+                "order",
+                "centroid_px",
+                "centroid_py",
+                "centroid_lon",
+                "centroid_lat",
+            ])
+            .unwrap();
+
+        if let Some(subflows_map) = &self.subflows {
+            for (fake_topaz_id, subflow_collection) in subflows_map {
+                if let Some((field_id, topaz_id)) =
+                    Self::resolve_field_lookup(*fake_topaz_id, fake_topaz_id_lookup)
+                {
+                    for fp in &subflow_collection.flowpaths {
+                        let (lon, lat) =
+                            px_to_wgs(wgs_transform, fp.centroid_px.0, fp.centroid_px.1);
+
+                        let record = [
+                            field_id.to_string(),
+                            topaz_id.to_string(),
+                            fake_topaz_id.to_string(),
+                            fp.topaz_id.to_string(),
+                            fp.fp_id.to_string(),
+                            fp.slope_scalar.to_string(),
+                            fp.length.to_string(),
+                            fp.width.to_string(),
+                            fp.direction.to_string(),
+                            fp.aspect.to_string(),
+                            fp.area_m2().to_string(),
+                            fp.elevation.to_string(),
+                            fp.order.to_string(),
+                            fp.centroid_px.0.to_string(),
+                            fp.centroid_px.1.to_string(),
+                            lon.to_string(),
+                            lat.to_string(),
+                        ];
+
+                        writer.write_record(record).unwrap();
+                    }
+                }
+            }
+        } else {
             panic!("Unexpected None in subflows!");
         }
 
@@ -1703,4 +1924,3 @@ pub fn walk_flowpath(
         -1.0
     )
 }
-
