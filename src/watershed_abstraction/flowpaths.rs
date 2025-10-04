@@ -320,81 +320,6 @@ impl FlowpathCollection {
     }
 
     #[allow(dead_code)]
-    pub fn abstract_hillslope(&self,
-        flovec: &Raster<i32>,
-        taspec: &Raster<f64>,
-        vec_indices: &Vec<usize>
-    ) -> FlowPath {
-
-        let cellsize: f64 = flovec.cellsize;
-        let cellsize2: f64 = cellsize * cellsize;
-        let topaz_id: i32 = self.flowpaths[0].topaz_id;
-
-        let indices: HashSet<usize> = vec_indices.iter().cloned().collect();
-
-        // get indices of subcatchment
-        let area = indices.len() as f64 * cellsize2;
-
-        let longest_fp: &FlowPath = self.get_longest_fp();
-
-        // If subcatchment is a source type then we calculate the distance
-        // by taking a weighted average based on the length of the flowpaths
-        // contained in the subcatchment
-        //let length: f64 = longest_fp.length;
-        let edge_flowpaths = self.get_edge_flowpaths();
-        let length = flowpaths_median_length(&edge_flowpaths).unwrap_or(0.0);
-        let width: f64 = area / length;
-
-        let mut direction: f64 = 0.0;
-
-        // determine aspect
-        let aspect: f64 = taspec.determine_aspect(vec_indices);
-
-        // calculate weighted slope from flowpaths
-        let (w_slopes, distances, distances_norm): (Vec<f64>, Vec<f64>, Vec<f64>) =
-            self.weighted_slope_average_from_fps();
-
-        let centroid_px = flovec.centroid_of(vec_indices);
-
-        assert!(distances.len() > 1, "distances {:?}", distances);
-
-        // iterate over distances and slopes and calculate elevations
-        // for each point
-        let mut elevs: Vec<f64> = vec![longest_fp.elevation];
-        for i in 0..distances.len() - 1 {
-            let dx: f64 = distances[i+1] - distances[i];
-            let dy: f64 = w_slopes[i];
-            let elevation: f64 = elevs[i] - (dx * dy);
-            elevs.push(elevation);
-        }
-
-        let slope_scalar: f64 = (elevs[0] - elevs[elevs.len() - 1]) / length;
-        let elevation: f64 = elevs[0];
-
-        let vec_indices: Vec<usize> = indices.into_iter().collect();
-        FlowPath::new(
-            vec_indices,
-            longest_fp.head,
-            longest_fp.tail,
-            (centroid_px.0 as i32, centroid_px.1 as i32),
-            distances_norm,
-            w_slopes,
-            elevs,
-            topaz_id,
-            -1,
-            length,
-            width,
-            aspect,
-            direction,
-            slope_scalar,
-            cellsize,
-            elevation,
-            -1,
-            -1.0
-        )
-    }
-
-    #[allow(dead_code)]
     pub fn to_geojson_feature_collection(&self, raster: &Raster<i32>) -> FeatureCollection {
         let features: Vec<Feature> = self.flowpaths.iter()
             .map(|fp| fp.to_geojson_feature(raster))
@@ -1104,7 +1029,7 @@ impl FlowPath {
     ) -> std::io::Result<()> {
         
         // Open a file in write mode
-        let mut file = File::create(path)?;
+        let file = File::create(path)?;
 
         self._write_slp(&file, max_points, clip_hillslopes, clip_hillslope_length)?;
 

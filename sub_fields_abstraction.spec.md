@@ -101,7 +101,7 @@ All other behaviour mirrors `wbt_abstract_watershed` (e.g., thread pool initiali
 - `SubFieldOutputs` struct to stage final data before writing (filenames, metadata rows).
 
 ### 2. Raster masking utilities
-- Introduce helper `build_sub_field_masks(field_raster, subwta_raster, min_area_m2) -> (Vec<SubFieldRecord>, LookupRows)` inside `watershed_abstraction.rs` or a new module (e.g., `sub_fields.rs`).
+- Introduce helper `build_sub_field_masks(field_raster, subwta_raster, min_area_m2) -> (Vec<SubFieldRecord>, LookupRows)` inside the `watershed_abstraction` module (for example `src/watershed_abstraction/sub_fields.rs`).
 - The helper returns deduplicated records ready for flowpath generation.
 
 ### 3. Flowpath walkers

@@ -105,3 +105,33 @@ cp /workdir/peridot/target/release/wbt_abstract_watershed \
 ```
 
 Tests live under `tests/` and can be executed with `cargo test`.
+
+## Source Tree
+
+peridot/src$ tree
+.
+├── bin
+│   ├── abstract_watershed.rs
+│   ├── sub_fields_abstraction.rs
+│   └── wbt_abstract_watershed.rs
+├── lib.rs
+├── rasters
+│   ├── d8_wbt_to_topaz.rs
+│   ├── mod.rs
+│   └── raster.rs
+├── support
+│   ├── douglas_peucker.rs
+│   ├── mod.rs
+│   └── support.rs
+├── topaz
+│   ├── mod.rs
+│   └── netw.rs
+├── watershed_abstraction
+│   ├── flowpaths.rs
+│   ├── mod.rs
+│   └── watershed_abstraction.rs
+└── wbt
+    ├── mod.rs
+    ├── wbt_netw.rs
+    ├── wbt_sub_fields_abstraction.rs
+    └── wbt_watershed_abstraction.rs

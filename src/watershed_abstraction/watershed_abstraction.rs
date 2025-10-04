@@ -12,7 +12,7 @@ use std::env;
 use rayon::prelude::*;
 use lazy_static::lazy_static;
 
-trait LinkAttributes {
+pub trait LinkAttributes {
     fn get_areaup(&self) -> f64;
     fn get_order(&self) -> i32;
 }
