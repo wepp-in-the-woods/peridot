@@ -4,7 +4,7 @@ use clap::Parser;
 use rayon::ThreadPoolBuilder;
 use std::io;
 
-use peridot::watershed_abstraction::wbt_sub_fields_abstraction;
+use peridot::wbt_sub_fields_abstraction::wbt_sub_fields_abstraction;
 
 #[derive(Parser)]
 struct Opts {

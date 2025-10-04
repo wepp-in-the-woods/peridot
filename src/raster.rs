@@ -284,9 +284,9 @@ pub fn px_to_wgs(wgs_transform: &[f64; 4], px: i32, py: i32) -> (f64, f64) {
 pub fn utm_to_px(geo_transform: &[f64], easting: f64, northing: f64) -> (i32, i32) {
     let xorigin = geo_transform[0];
     let xpxsize = geo_transform[1];
-    let xzero = geo_transform[2];
+    let _xzero = geo_transform[2];
     let yorigin = geo_transform[3];
-    let yzero = geo_transform[4];
+    let _yzero = geo_transform[4];
     let ypxsize = geo_transform[5];
 
     let px = (easting - xorigin) / xpxsize;
