@@ -108,7 +108,8 @@ Tests live under `tests/` and can be executed with `cargo test`.
 
 ## Source Tree
 
-peridot/src$ tree
+```
+peridot/src
 .
 ├── bin
 │   ├── abstract_watershed.rs
@@ -135,3 +136,4 @@ peridot/src$ tree
     ├── wbt_netw.rs
     ├── wbt_sub_fields_abstraction.rs
     └── wbt_watershed_abstraction.rs
+```
