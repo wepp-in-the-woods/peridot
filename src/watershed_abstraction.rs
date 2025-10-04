@@ -230,10 +230,10 @@ pub fn wbt_sub_fields_abstraction(
     let hillslopes: FlowpathCollection = abstract_subfieldcatchments(&intersection_subwta, &relief, &flovec, &fvslop, &taspec);
 
     let tasks: Vec<Box<dyn FnOnce() -> Result<()> + Send>> = vec![
-        Box::new(|| hillslopes.write_slps(&format!("{}/slope_files/hillslopes/", output_dir), max_points, clip_hillslopes, clip_hillslope_length)),
-        Box::new(|| hillslopes.write_metadata_to_csv(&format!("{}/hillslopes.csv", output_dir), &subwta.wgs_transform)),
-        Box::new(|| hillslopes.write_subflows_metadata_to_csv(&format!("{}/flowpaths.csv", output_dir), &subwta.wgs_transform)),
-        Box::new(|| hillslopes.write_subflow_slps(&format!("{}/slope_files/flowpaths/", output_dir), max_points, clip_hillslopes, clip_hillslope_length)),
+        Box::new(|| hillslopes.write_field_slps(&format!("{}/slope_files/hillslopes/", output_dir), max_points, clip_hillslopes, clip_hillslope_length, fake_topaz_id_lookup)),
+        Box::new(|| hillslopes.write_field_metadata_to_csv(&format!("{}/hillslopes.csv", output_dir), &subwta.wgs_transform, fake_topaz_id_lookup)),
+        Box::new(|| hillslopes.write_field_subflows_metadata_to_csv(&format!("{}/flowpaths.csv", output_dir), &subwta.wgs_transform, fake_topaz_id_lookup)),
+        Box::new(|| hillslopes.write_field_subflow_slps(&format!("{}/slope_files/flowpaths/", output_dir), max_points, clip_hillslopes, clip_hillslope_length, fake_topaz_id_lookup)),
     ];
 
     // Execute tasks in parallel
@@ -813,6 +813,37 @@ impl FlowpathCollection {
                     fname = format!("fp_{}_{}.slp", fp.topaz_id, fp.fp_id);
                 }
 
+                let path = format!("{}/{}", out_dir, fname);
+                fp.write_slp(&path, max_points, clip_hillslopes, clip_hillslope_length)
+            })
+            .collect();
+
+        // Check for any errors
+        for result in results {
+            result?;
+        }
+
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub fn write_field_slps(
+        &self, out_dir: &str, 
+        max_points: usize, 
+        clip_hillslopes: bool, 
+        clip_hillslope_length: f64,
+        fake_topaz_id_lookup: HashMap<(i32, i32), i32>
+    ) -> std::io::Result<()> {
+
+        
+        let results: Vec<std::io::Result<()>> = self.flowpaths.par_iter()
+            .map(|fp| {
+                let fname;
+                let (field_id, topaz_id) = fake_topaz_id_lookup.iter()
+                    .find(|&(_, &v)| v == fp.topaz_id)
+                    .map(|(k, _)| *k)
+                    .unwrap_or((-1, -1));
+                fname = format!("field_{}_{}.slp", field_id, topaz_id);
                 let path = format!("{}/{}", out_dir, fname);
                 fp.write_slp(&path, max_points, clip_hillslopes, clip_hillslope_length)
             })
