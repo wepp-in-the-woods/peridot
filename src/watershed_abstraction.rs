@@ -206,13 +206,15 @@ pub fn wbt_sub_fields_abstraction(
     // iterate over field and relief rasters
     let mut fake_id: i32 = 1;
     let mut fake_topaz_id_lookup: HashMap<(i32, i32), i32> = HashMap::new();
+    let mut fake_topaz_areas_px: HashMap<i32, i32> = HashMap::new();
 
     for i in 0..subwta.data.len() {
 
         let field_id = field.data[i];
         let topaz_id = subwta.data[i];
 
-        if field_id == 0 || topaz_id == 0 {
+        // continue if no field or no topaz id or channel pixel
+        if field_id == 0 || topaz_id == 0 || topaz_id % 10 == 4 {
             intersection_subwta.data[i] = 0;
             continue;
         }
@@ -224,6 +226,28 @@ pub fn wbt_sub_fields_abstraction(
             fake_id += 1;
             fake_topaz_id_lookup.insert(key, fake_id);
             intersection_subwta.data[i] = fake_id;
+        }
+
+        fake_topaz_areas_px.entry(intersection_subwta.data[i])
+            .and_modify(|e| *e += 1)
+            .or_insert(1);
+    }
+
+    // remove small sub-fields based on area threshold
+    let cellsize2 = subwta.cellsize * subwta.cellsize;
+    let min_area_px = (sub_field_min_area_threshold_m2 / cellsize2).ceil() as i32;
+    let valid_fake_ids: HashSet<i32> = fake_topaz_areas_px.iter()
+        .filter(|(_k, &v)| v >= min_area_px)
+        .map(|(&k, _v)| k)
+        .collect();
+
+    for i in 0..intersection_subwta.data.len() {
+        let fake_topaz_id = intersection_subwta.data[i];
+        if fake_topaz_id == 0 {
+            continue;
+        }
+        if !valid_fake_ids.contains(&fake_topaz_id) {
+            intersection_subwta.data[i] = 0;
         }
     }
 
