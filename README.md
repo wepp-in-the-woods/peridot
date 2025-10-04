@@ -67,6 +67,12 @@ cargo build --release --features bindgen
 
 ./target/release/wbt_abstract_watershed /path/to/run \
   --ncpu 8 --max-points 120 --bieger2015-widths
+
+./target/release/sub_fields_abstraction /path/to/run \
+  --ncpu 8 --max-points 120 \
+  --sub-field-min-area-threshold-m2 500 \
+  --field-raster ag_fields/field_boundaries.tif \
+  --output-dir ag_fields/sub_fields
 ```
 
 Key options:
@@ -75,6 +81,8 @@ Key options:
 - `--max-points` caps profile polyline length (WEPP defaults to 99).
 - `--clip-hillslopes` and `--clip-hillslope-length` trim flowpaths to a maximum physical length.
 - `--bieger2015-widths` uses the Bieger (2015) regressions to infer channel widths from drainage area.
+- `--sub-field-min-area-threshold-m2` (sub_fields_abstraction) drops field/subcatchment intersections smaller than the specified area.
+- `--field-raster` and `--output-dir` let you override the default AgFields raster location and output directory when running the sub-field tool.
 
 ## Integrating with wepppy
 
