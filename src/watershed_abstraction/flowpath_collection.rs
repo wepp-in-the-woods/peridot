@@ -642,7 +642,7 @@ impl FlowpathCollection {
         writer
             .write_record([
                 "field_id",
-                "subwta_id",
+                "topaz_id",
                 "sub_field_id",
                 "slope_scalar",
                 "length",
@@ -757,7 +757,7 @@ impl FlowpathCollection {
         writer
             .write_record([
                 "field_id",
-                "subwta_id",
+                "topaz_id",
                 "sub_field_id",
                 "topaz_id",
                 "fp_id",
