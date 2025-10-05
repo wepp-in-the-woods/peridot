@@ -10,23 +10,23 @@ use serde_json::to_string_pretty;
 use crate::douglas_peucker::douglas_peucker;
 use crate::raster::{px_to_wgs, Raster};
 use crate::support::interpolate_slp;
-use crate::flowpath::FlowPath;
+use crate::flowpath::Flowpath;
 
 #[derive(Debug, Clone)]
 pub struct FlowpathCollection {
-    pub flowpaths: Vec<FlowPath>,
+    pub flowpaths: Vec<Flowpath>,
     pub subflows: Option<HashMap<i32, FlowpathCollection>>
 }
 
 impl FlowpathCollection {
 
     #[allow(dead_code)]
-    pub fn get_fp_by_topaz_id(&self, topaz_id: i32) -> Option<&FlowPath> {
+    pub fn get_fp_by_topaz_id(&self, topaz_id: i32) -> Option<&Flowpath> {
         self.flowpaths.iter().find(|fp| fp.topaz_id == topaz_id)
     }
 
     #[allow(dead_code)]
-    pub fn get_longest_fp(&self) -> &FlowPath {
+    pub fn get_longest_fp(&self) -> &Flowpath {
         let mut max_length: f64 = 0.0;
         let mut max_index: usize = 0;
         for (i, fp) in self.flowpaths.iter().enumerate() {
@@ -84,7 +84,7 @@ impl FlowpathCollection {
     #[allow(dead_code)]
     pub fn weighted_slope_average_from_fps(&self) -> (Vec<f64>, Vec<f64>, Vec<f64>)  {
 
-        let longest_fp: &FlowPath = self.get_longest_fp();
+        let longest_fp: &Flowpath = self.get_longest_fp();
         let mut num_points: usize = longest_fp.distances_norm.len();
         let longest_length: f64 = longest_fp.length;
 
@@ -155,7 +155,7 @@ impl FlowpathCollection {
     pub fn abstract_subcatchment(&self,
         subwta: &Raster<i32>,
         taspec: &Raster<f64>,
-        channels: &FlowpathCollection) -> FlowPath {
+        channels: &FlowpathCollection) -> Flowpath {
 
         let cellsize: f64 = subwta.cellsize;
         let cellsize2: f64 = cellsize * cellsize;
@@ -167,7 +167,7 @@ impl FlowpathCollection {
 
         // find corresponding chn_id
         let chn_id: i32 = ((topaz_id as f64 / 10.0).floor() * 10.0) as i32 + 4;
-        let chn_summary: &FlowPath = &channels.get_fp_by_topaz_id(chn_id).unwrap();
+        let chn_summary: &Flowpath = &channels.get_fp_by_topaz_id(chn_id).unwrap();
 
         // If subcatchment is a source type then we calculate the distance
         // by taking a weighted average based on the length of the flowpaths
@@ -202,7 +202,7 @@ impl FlowpathCollection {
         let (w_slopes, distances, distances_norm): (Vec<f64>, Vec<f64>, Vec<f64>) =
             self.weighted_slope_average_from_fps();
 
-        let longest_fp: &FlowPath = self.get_longest_fp();
+        let longest_fp: &Flowpath = self.get_longest_fp();
         let centroid_px = subwta.centroid_of(&indices);
 
         assert!(distances.len() > 1, "distances {:?}", distances);
@@ -221,7 +221,7 @@ impl FlowpathCollection {
         let elevation: f64 = elevs[0];
 
         let vec_indices: Vec<usize> = indices.into_iter().collect();
-        FlowPath::new(
+        Flowpath::new(
             vec_indices,
             longest_fp.head,
             longest_fp.tail,
@@ -247,7 +247,7 @@ impl FlowpathCollection {
     pub fn abstract_subfieldcatchment(&self,
         intersection_subwta: &Raster<i32>,
         taspec: &Raster<f64>
-    ) -> FlowPath {
+    ) -> Flowpath {
 
 
         let cellsize: f64 = intersection_subwta.cellsize;
@@ -277,7 +277,7 @@ impl FlowpathCollection {
         let (w_slopes, distances, distances_norm): (Vec<f64>, Vec<f64>, Vec<f64>) =
             self.weighted_slope_average_from_fps();
 
-        let longest_fp: &FlowPath = self.get_longest_fp();
+        let longest_fp: &Flowpath = self.get_longest_fp();
         let centroid_px = intersection_subwta.centroid_of(&indices);
 
         assert!(distances.len() > 1, "distances {:?}", distances);
@@ -296,7 +296,7 @@ impl FlowpathCollection {
         let elevation: f64 = elevs[0];
 
         let vec_indices: Vec<usize> = indices.into_iter().collect();
-        FlowPath::new(
+        Flowpath::new(
             vec_indices,
             longest_fp.head,
             longest_fp.tail,
@@ -817,7 +817,7 @@ impl FlowpathCollection {
     }
 
     // Method to find edge flowpaths
-    pub fn get_edge_flowpaths(&self) -> Vec<FlowPath> {
+    pub fn get_edge_flowpaths(&self) -> Vec<Flowpath> {
         let mut edge_flowpaths = Vec::new();
 
         // Iterate over flowpaths with their index for comparison
@@ -852,7 +852,7 @@ impl FlowpathCollection {
 
 
 // Method to calculate the median length of flowpaths
-fn flowpaths_median_length(flowpaths: &Vec<FlowPath>) -> Option<f64> {
+fn flowpaths_median_length(flowpaths: &Vec<Flowpath>) -> Option<f64> {
     let num_flowpaths = flowpaths.len();
 
     // Return None if the vector is empty

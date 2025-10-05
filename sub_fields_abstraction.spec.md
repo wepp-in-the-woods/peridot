@@ -62,11 +62,11 @@ Existing `ag_fields/slope_files/` can contain other artifacts later; keeping sub
      - Store its `HashSet<usize>` for O(1) membership tests.
      - Walk flowpaths restricted to that mask: adapt `walk_flowpaths`/`walk_flowpath` to accept a closure or optional mask so that flow directions stop when the next cell is outside the mask even if it shares the same `subwta_id`.
      - Aggregate slopes via a new `FlowpathCollection::abstract_subfield(...)` helper (can reuse large parts of `abstract_subcatchment` but takes precomputed mask + parent channel information to compute width/direction).
-     - Capture the resulting representative `FlowPath` plus underlying `FlowpathCollection` of subflows for metadata export.
+     - Capture the resulting representative `Flowpath` plus underlying `FlowpathCollection` of subflows for metadata export.
    - Use `rayon` to parallelise across sub-fields (bounded by CLI `--ncpu` similar to existing binaries).
 5. **Write artifacts**
    - `csv::Writer` for lookup & metadata tables (ASCII output to remain WEPP-compatible).
-   - Use existing `FlowPath::_write_slp` machinery for slope files; provide custom wrappers that accept a desired filename stem instead of hardcoding `hill_<topaz_id>.slp`.
+   - Use existing `Flowpath::_write_slp` machinery for slope files; provide custom wrappers that accept a desired filename stem instead of hardcoding `hill_<topaz_id>.slp`.
    - Flowpath `.slp` files are optional but required per request (“we do need to create the flowpath files”). Mirror `write_subflow_slps`, but prefix filenames with `sub_field_...` and include `field_id`.
    - Ensure directories exist before writing (use `std::fs::create_dir_all`).
 6. **Return**
@@ -96,7 +96,7 @@ All other behaviour mirrors `wbt_abstract_watershed` (e.g., thread pool initiali
   - `key: SubFieldKey`,
   - `indices: HashSet<usize>`,
   - `flowpaths: FlowpathCollection` (raw per-pixel flowpaths),
-  - `summary: FlowPath` (representative hillslope),
+  - `summary: Flowpath` (representative hillslope),
   - `area_m2: f64`.
 - `SubFieldOutputs` struct to stage final data before writing (filenames, metadata rows).
 
@@ -116,11 +116,11 @@ All other behaviour mirrors `wbt_abstract_watershed` (e.g., thread pool initiali
   - Keep original `topaz_id` for orientation decisions.
   - When referencing channels, look up `channels.get_fp_by_topaz_id(chn_id)` exactly as before; we still rely on the parent channel width.
   - Weighted slope aggregation, aspect, centroid logic can be reused (with centroid derived from `subwta.centroid_of(&mask_indices)` since it only needs the indices themselves).
-  - Set `FlowPath.fp_id` to the assigned `sub_field_id` (or maintain `field_id`) so file naming stays unique.
+  - Set `Flowpath.fp_id` to the assigned `sub_field_id` (or maintain `field_id`) so file naming stays unique.
 
 ### 5. Output writers
 - Implement dedicated writers instead of reusing `write_slps` to control filenames and metadata order:
-  - `write_sub_field_slps(sub_fields: &[SubFieldRecord], out_dir, max_points, clip_hillslopes, clip_length)` – uses `FlowPath::write_slp` with filenames `sub_field_{field}_{subwta}.slp`.
+  - `write_sub_field_slps(sub_fields: &[SubFieldRecord], out_dir, max_points, clip_hillslopes, clip_length)` – uses `Flowpath::write_slp` with filenames `sub_field_{field}_{subwta}.slp`.
   - `write_sub_field_flowpath_slps` – iterate over each `FlowpathCollection` subflow and output `sub_field_{field}_{subwta}_fp_{fpid}.slp`.
   - `write_sub_field_metadata` and `write_sub_field_flowpath_metadata` to produce the CSVs with the augmented headers.
 - Ensure ASCII encoding (Rust `csv` already writes UTF-8; values are numeric so ASCII-safe).

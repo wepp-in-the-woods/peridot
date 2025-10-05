@@ -8,7 +8,7 @@ use std::sync::Arc;
 use rayon::prelude::*;
 
 use crate::d8_wbt_to_topaz::remap_whitebox_d8_to_topaz;
-use crate::flowpath::FlowPath;
+use crate::flowpath::Flowpath;
 use crate::flowpath_collection::FlowpathCollection;
 use crate::raster::Raster;
 use crate::watershed_abstraction::walk_flowpaths;
@@ -173,10 +173,10 @@ pub fn abstract_subfieldcatchments(
         subflows: Some(HashMap::<i32, FlowpathCollection>::new())
     };
 
-    let results: Vec<(FlowPath, i32, FlowpathCollection)> = fake_topaz_ids.into_par_iter()
+    let results: Vec<(Flowpath, i32, FlowpathCollection)> = fake_topaz_ids.into_par_iter()
         .map(|fake_topaz_id| {
             let flowpaths: FlowpathCollection = walk_flowpaths(fake_topaz_id, &intersection_subwta, &relief, &flovec, &fvslop, &taspec);
-            let subcatchment: FlowPath = flowpaths.abstract_subfieldcatchment(
+            let subcatchment: Flowpath = flowpaths.abstract_subfieldcatchment(
                 &intersection_subwta,
                 &taspec);
             (subcatchment, fake_topaz_id, flowpaths)

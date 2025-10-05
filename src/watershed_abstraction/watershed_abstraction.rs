@@ -11,7 +11,7 @@ use crate::raster::Raster;
 use crate::support::{circmean, compute_direction};
 use crate::netw::{read_netw_tab, write_network, ChannelNode};
 use crate::wbt_netw::Link;
-use crate::flowpath::FlowPath;
+use crate::flowpath::Flowpath;
 use crate::flowpath_collection::FlowpathCollection;
 
 
@@ -123,10 +123,10 @@ pub fn abstract_subcatchments(
     };
 
     // iterate over field and relief rasters
-    let results: Vec<(FlowPath, i32, FlowpathCollection)> = topaz_ids.into_par_iter()
+    let results: Vec<(Flowpath, i32, FlowpathCollection)> = topaz_ids.into_par_iter()
         .map(|topaz_id| {
             let flowpaths: FlowpathCollection = walk_flowpaths(topaz_id, &subwta, &relief, &flovec, &fvslop, &taspec);
-            let subcatchment: FlowPath = flowpaths.abstract_subcatchment(
+            let subcatchment: Flowpath = flowpaths.abstract_subcatchment(
                 &subwta,
                 &taspec,
                 &channels);
@@ -160,7 +160,7 @@ where
     let mut topaz_ids: Vec<i32> = unique_vals.iter().filter(|&&topaz_id| topaz_id % 10 == 4).cloned().collect();
     topaz_ids.sort();
 
-    let flowpaths: Vec<FlowPath> = topaz_ids.into_par_iter()
+    let flowpaths: Vec<Flowpath> = topaz_ids.into_par_iter()
         .map(|topaz_id| walk_channel(
             topaz_id, 
             &subwta, 
@@ -190,7 +190,7 @@ pub fn walk_channel(
     areaup: f64,
     order: i32,
     bieger2015_widths: bool
-) -> FlowPath {
+) -> Flowpath {
     // get hashset of indices of topaz_id
     let indices: HashSet<usize> = subwta.indices_of(topaz_id);
     assert!(indices.len() > 0, "indices.len() == 0 for topaz_id: {}", topaz_id);
@@ -286,7 +286,7 @@ pub fn walk_channel(
         }
     }
 
-    FlowPath::new(
+    Flowpath::new(
         sorted_indices,
         head,
         tail,
@@ -320,7 +320,7 @@ pub fn walk_flowpaths(
 
     let indices = subwta.indices_of(topaz_id);
     let indices_vec: Vec<_> = indices.iter().collect();
-    let flowpaths: Vec<FlowPath> = indices_vec.iter()
+    let flowpaths: Vec<Flowpath> = indices_vec.iter()
         .enumerate()
         .map(|(i, &head_index)| {
             walk_flowpath(
@@ -352,7 +352,7 @@ pub fn walk_flowpath(
     fvslop: &Raster<f64>,
     taspec: &Raster<f64>,
     fp_id: i32
-) -> FlowPath {
+) -> Flowpath {
     assert_eq!(subwta.data[head_index], topaz_id);
 
     let cellsize: f64 = subwta.cellsize;
@@ -443,7 +443,7 @@ pub fn walk_flowpath(
         distances_norm.push(d / length);
     }
 
-    FlowPath::new(
+    Flowpath::new(
         sorted_indices,
         head,
         tail,

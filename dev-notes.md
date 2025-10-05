@@ -15,14 +15,14 @@
 3. Rasters are loaded from either `dem/topaz/` (`*.ARC`) or `dem/wbt/` (`*.tif`) into `Raster<T>` instances. Metadata (cell size, transforms) travels with the data.
 4. Channel connectivity is read via `read_netw_tab` (TOPAZ) or `read_wbt_netw_tab` (Whitebox). The result is a vector of network nodes plus an adjacency list dumped to `watershed/network.txt` for debugging.
 5. `walk_channels` traverses the stream network, recording the polyline geometry, slope, and width metadata for each channel. Widths honour the Bieger (2015) regression when requested.
-6. `abstract_subcatchments` iterates over each hillslope ID, hydrologically samples internal flow paths (`walk_flowpaths`), then collapses them into a representative `FlowPath` using weighted slope averaging (`FlowpathCollection::weighted_slope_average_from_fps`).
+6. `abstract_subcatchments` iterates over each hillslope ID, hydrologically samples internal flow paths (`walk_flowpaths`), then collapses them into a representative `Flowpath` using weighted slope averaging (`FlowpathCollection::weighted_slope_average_from_fps`).
 7. The final `FlowpathCollection` objects write slope files (`*.slp`), CSV tables, and GeoJSON in parallel using Rayon tasks.
 
 ## Data expectations
 - TOPAZ inputs must include `SUBWTA.ARC`, `RELIEF.ARC`, `FLOVEC.ARC`, `FVSLOP.ARC`, `TASPEC.ARC`, and `NETW.TAB` under `dem/topaz/`.
 - Whitebox inputs must include `subwta.tif`, `relief.tif`, `flovec.tif`, `fvslop.tif`, `taspec.tif`, and `netw.tsv` under `dem/wbt/`.
 - Rasters share a common grid; mismatched dimensions will panic early when `Raster::read` performs shape checks.
-- `FlowPath.topaz_id` mirrors TOPAZ's numbering (channels end in `4`, contributing hillslopes end in `1`, `2`, or `3`). Whitebox runs adopt the same convention after the D8 remap step.
+- `Flowpath.topaz_id` mirrors TOPAZ's numbering (channels end in `4`, contributing hillslopes end in `1`, `2`, or `3`). Whitebox runs adopt the same convention after the D8 remap step.
 
 ## Developing locally
 - Use `cargo test` to execute the regression suite; tests live under `tests/` and stage watershed fixtures for both TOPAZ and Whitebox scenarios.
@@ -32,6 +32,6 @@
 - The repo ships with `set_wepppy310_env.sh` to activate the Conda toolchain used by WEPPcloud deployments; source it before building if you rely on that environment.
 
 ## Extending the abstraction tools
-- Share new per-hillslope metrics by extending `FlowPath` in `src/watershed_abstraction/flowpath.rs`, then thread the data through the CSV and GeoJSON writers.
+- Share new per-hillslope metrics by extending `Flowpath` in `src/watershed_abstraction/flowpath.rs`, then thread the data through the CSV and GeoJSON writers.
 - Add backend-specific behaviour using feature gates inside `wbt_abstract_watershed` or `abstract_watershed`. The shared code path makes it easy to keep the outputs aligned—avoid duplicating logic between the two entry points.
 - If you need additional rasters, follow the pattern in `Raster::<T>::read` to guarantee GDAL closes datasets deterministically and honours the `wgs_transform` metadata.

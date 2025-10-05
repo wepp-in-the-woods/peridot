@@ -10,7 +10,7 @@ use crate::support::{douglas_peucker, interpolate_slp};
 use crate::raster::Raster;
 
 #[derive(Debug, Clone)]
-pub struct FlowPath {
+pub struct Flowpath {
     pub indices: Vec<usize>,
     pub head: (i32, i32),
     pub tail: (i32, i32),
@@ -34,9 +34,9 @@ pub struct FlowPath {
     pub areaup: f64,
 }
 
-impl Default for FlowPath {
+impl Default for Flowpath {
     fn default() -> Self {
-        FlowPath {
+        Flowpath {
             indices: Vec::new(),
             centroid_px: (0, 0),
             head: (0, 0),
@@ -62,7 +62,7 @@ impl Default for FlowPath {
     }
 }
 
-impl FlowPath {
+impl Flowpath {
 
     #[allow(dead_code)]
     pub fn new(
@@ -94,7 +94,7 @@ impl FlowPath {
 
         let kp: f64 = length * indices.len() as f64 * cellsize * cellsize;
 
-        FlowPath {
+        Flowpath {
             indices,
             head,
             tail,
