@@ -43,17 +43,16 @@ pub fn wbt_sub_fields_abstraction(
     let mut intersection_subwta = subwta.clone();
 
     // iterate over field and relief rasters
-    let mut fake_id: i32 = 0;  // start sub_field_id starts at 1
+    let mut fake_id: i32 = 0; // start sub_field_id starts at 1
     let mut fake_topaz_id_lookup: HashMap<(i32, i32), i32> = HashMap::new();
-    let mut fake_topaz_areas_px: HashMap<i32, i32> = HashMap::new();  // for area thresholding
+    let mut fake_topaz_areas_px: HashMap<i32, i32> = HashMap::new(); // for area thresholding
 
     for i in 0..subwta.data.len() {
-
         let field_id = field.data[i];
         let topaz_id = subwta.data[i];
 
         // continue if no field or no topaz id or channel pixel
-        if field_id == 0 || topaz_id == 0 || topaz_id % 10 == 4 {
+        if field_id <= 0 || topaz_id <= 0 || topaz_id % 10 == 4 {
             intersection_subwta.data[i] = 0;
             continue;
         }
@@ -67,7 +66,8 @@ pub fn wbt_sub_fields_abstraction(
             intersection_subwta.data[i] = fake_id;
         }
 
-        fake_topaz_areas_px.entry(intersection_subwta.data[i])
+        fake_topaz_areas_px
+            .entry(intersection_subwta.data[i])
             .and_modify(|e| *e += 1)
             .or_insert(1);
     }
@@ -82,9 +82,6 @@ pub fn wbt_sub_fields_abstraction(
 
     for i in 0..intersection_subwta.data.len() {
         let fake_topaz_id = intersection_subwta.data[i];
-        if fake_topaz_id == 0 {
-            continue;
-        }
         if !valid_fake_ids.contains(&fake_topaz_id) {
             intersection_subwta.data[i] = 0;
         }
@@ -93,7 +90,13 @@ pub fn wbt_sub_fields_abstraction(
     // write the intersection_subwta raster
     let _ = intersection_subwta.write(&format!("{}/sub_field_id_map.tif", output_dir));
 
-    let hillslopes = Arc::new(abstract_subfieldcatchments(&intersection_subwta, &relief, &flovec, &fvslop, &taspec));
+    let hillslopes = Arc::new(abstract_subfieldcatchments(
+        &intersection_subwta,
+        &relief,
+        &flovec,
+        &fvslop,
+        &taspec,
+    ));
     let fake_topaz_id_lookup = Arc::new(fake_topaz_id_lookup);
 
     let tasks: Vec<Box<dyn FnOnce() -> Result<()> + Send>> = vec![
@@ -140,17 +143,16 @@ pub fn wbt_sub_fields_abstraction(
             let hillslopes = Arc::clone(&hillslopes);
             let out_dir = format!("{}/slope_files/flowpaths/", output_dir);
             Box::new(move || {
-                hillslopes.write_field_subflow_slps(
-                    &out_dir,
-                    max_points,
-                    lookup.as_ref(),
-                )
+                hillslopes.write_field_subflow_slps(&out_dir, max_points, lookup.as_ref())
             })
         },
     ];
 
     // Execute tasks in parallel
-    tasks.into_par_iter().map(|f| f()).collect::<Result<Vec<_>>>()?;
+    tasks
+        .into_par_iter()
+        .map(|f| f())
+        .collect::<Result<Vec<_>>>()?;
 
     Ok(())
 }
@@ -161,31 +163,41 @@ pub fn abstract_subfieldcatchments(
     relief: &Raster<f64>,
     flovec: &Raster<i32>,
     fvslop: &Raster<f64>,
-    taspec: &Raster<f64>
+    taspec: &Raster<f64>,
 ) -> FlowpathCollection {
-
     let mut unique: HashSet<i32> = intersection_subwta.unique_values();
     unique.remove(&0);
 
     let fake_topaz_ids: Vec<i32> = unique.into_iter().collect();
     let mut hillslope_abstractions: FlowpathCollection = FlowpathCollection {
         flowpaths: Vec::new(),
-        subflows: Some(HashMap::<i32, FlowpathCollection>::new())
+        subflows: Some(HashMap::<i32, FlowpathCollection>::new()),
     };
 
-    let results: Vec<(Flowpath, i32, FlowpathCollection)> = fake_topaz_ids.into_par_iter()
+    let results: Vec<(Flowpath, i32, FlowpathCollection)> = fake_topaz_ids
+        .into_par_iter()
         .map(|fake_topaz_id| {
-            let flowpaths: FlowpathCollection = walk_flowpaths(fake_topaz_id, &intersection_subwta, &relief, &flovec, &fvslop, &taspec);
-            let subcatchment: Flowpath = flowpaths.abstract_subfieldcatchment(
+            let flowpaths: FlowpathCollection = walk_flowpaths(
+                fake_topaz_id,
                 &intersection_subwta,
-                &taspec);
+                &relief,
+                &flovec,
+                &fvslop,
+                &taspec,
+            );
+            let subcatchment: Flowpath =
+                flowpaths.abstract_subfieldcatchment(&intersection_subwta, &taspec);
             (subcatchment, fake_topaz_id, flowpaths)
         })
         .collect();
 
     for (subcatchment, fake_topaz_id, flowpaths) in results {
         hillslope_abstractions.flowpaths.push(subcatchment);
-        hillslope_abstractions.subflows.as_mut().unwrap().insert(fake_topaz_id, flowpaths);
+        hillslope_abstractions
+            .subflows
+            .as_mut()
+            .unwrap()
+            .insert(fake_topaz_id, flowpaths);
     }
 
     hillslope_abstractions
