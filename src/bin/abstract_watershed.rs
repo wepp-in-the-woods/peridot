@@ -7,9 +7,18 @@ use clap::Parser;
 use peridot::watershed_abstraction::abstract_watershed;
 
 #[derive(Parser)]
+#[command(
+    version = env!("PERIDOT_VERSION_STRING"),
+    long_version = env!("PERIDOT_VERSION_STRING"),
+    disable_version_flag = true
+)]
 struct Opts {
     /// Path to the watershed directory
     path_to_wd: String,
+
+    /// Show version information and exit
+    #[clap(short = 'v', long = "version", action = clap::ArgAction::Version, short_alias = 'V')]
+    _version: Option<bool>,
 
     /// Number of CPU threads
     #[clap(short, long, default_value = "4")]

@@ -2,6 +2,7 @@
 name = "peridot"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
 
 [[bin]]
 name = "abstract_watershed"
@@ -31,6 +32,9 @@ rayon = "1.8.0"
 proj = "0.27.2"
 clap = { version = "4.4.5", features = ["derive", "cargo"] }
 csv = "1.2.2"
+
+[build-dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [features]
 bindgen = ["gdal-sys/bindgen"]

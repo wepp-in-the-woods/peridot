@@ -7,9 +7,18 @@ use std::io;
 use peridot::wbt_sub_fields_abstraction::wbt_sub_fields_abstraction;
 
 #[derive(Parser)]
+#[command(
+    version = env!("PERIDOT_VERSION_STRING"),
+    long_version = env!("PERIDOT_VERSION_STRING"),
+    disable_version_flag = true
+)]
 struct Opts {
     /// Path to the WEPPcloud run directory
     path_to_wd: String,
+
+    /// Show version information and exit
+    #[clap(short = 'v', long = "version", action = clap::ArgAction::Version, short_alias = 'V')]
+    _version: Option<bool>,
 
     /// Number of CPU threads
     #[clap(short, long, default_value = "4")]
