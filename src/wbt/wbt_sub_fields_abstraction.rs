@@ -13,6 +13,20 @@ use crate::flowpath_collection::FlowpathCollection;
 use crate::raster::Raster;
 use crate::watershed_abstraction::walk_flowpaths;
 
+/// Find raster file, checking .tif first then .vrt as fallback
+fn find_raster_path(base_path: &str) -> String {
+    let tif_path = format!("{}.tif", base_path);
+    if Path::new(&tif_path).exists() {
+        return tif_path;
+    }
+    let vrt_path = format!("{}.vrt", base_path);
+    if Path::new(&vrt_path).exists() {
+        return vrt_path;
+    }
+    // Return .tif path to get original error message if neither exists
+    tif_path
+}
+
 #[allow(dead_code)]
 pub fn wbt_sub_fields_abstraction(
     wd: &str,
@@ -32,13 +46,13 @@ pub fn wbt_sub_fields_abstraction(
     let _ = std::fs::create_dir_all(Path::new(output_dir).join("slope_files"));
     let _ = std::fs::create_dir_all(Path::new(output_dir).join("slope_files/flowpaths"));
 
-    let subwta: Raster<i32> = Raster::<i32>::read("dem/wbt/subwta.tif").unwrap(); // hillslope with topaz_ids file, channels end with 4 (e.g 24, 34, 44), subcatchments end with 1, 2, 3. It starts at 22
+    let subwta: Raster<i32> = Raster::<i32>::read(&find_raster_path("dem/wbt/subwta")).unwrap(); // hillslope with topaz_ids file, channels end with 4 (e.g 24, 34, 44), subcatchments end with 1, 2, 3. It starts at 22
     let field: Raster<i32> = Raster::<i32>::read(field_raster).unwrap(); // rasterized field boundaries
-    let relief: Raster<f64> = Raster::<f64>::read("dem/wbt/relief.tif").unwrap(); // dem
-    let flovec_wbt: Raster<i32> = Raster::<i32>::read("dem/wbt/flovec.tif").unwrap(); // d8 flowvec
+    let relief: Raster<f64> = Raster::<f64>::read(&find_raster_path("dem/wbt/relief")).unwrap(); // dem
+    let flovec_wbt: Raster<i32> = Raster::<i32>::read(&find_raster_path("dem/wbt/flovec")).unwrap(); // d8 flowvec
     let flovec = remap_whitebox_d8_to_topaz(&flovec_wbt);
-    let fvslop: Raster<f64> = Raster::<f64>::read("dem/wbt/fvslop.tif").unwrap(); // slope
-    let taspec: Raster<f64> = Raster::<f64>::read("dem/wbt/taspec.tif").unwrap(); // aspect
+    let fvslop: Raster<f64> = Raster::<f64>::read(&find_raster_path("dem/wbt/fvslop")).unwrap(); // slope
+    let taspec: Raster<f64> = Raster::<f64>::read(&find_raster_path("dem/wbt/taspec")).unwrap(); // aspect
 
     let mut intersection_subwta = subwta.clone();
 
