@@ -46,20 +46,30 @@ struct Opts {
     /// Skip writing flowpaths outputs (flowpaths.csv and slope_files/flowpaths)
     #[clap(long, default_value = "false")]
     skip_flowpaths: bool,
+
+    /// Use a single representative flowpath per hillslope (WBT-only)
+    #[clap(long, default_value = "false")]
+    representative_flowpath: bool,
 }
 
 fn main() -> Result<(), GdalError> {
     let opts: Opts = Opts::parse();
+    let skip_flowpaths = if opts.representative_flowpath {
+        true
+    } else {
+        opts.skip_flowpaths
+    };
     init_logging(Path::new(&opts.path_to_wd));
     info!(
-        "wbt_abstract_watershed start: wd={}, ncpu={}, max_points={}, clip_hillslopes={}, clip_hillslope_length={}, bieger2015_widths={}, skip_flowpaths={}",
+        "wbt_abstract_watershed start: wd={}, ncpu={}, max_points={}, clip_hillslopes={}, clip_hillslope_length={}, bieger2015_widths={}, skip_flowpaths={}, representative_flowpath={}",
         opts.path_to_wd,
         opts.ncpu,
         opts.max_points,
         opts.clip_hillslopes,
         opts.clip_hillslope_length,
         opts.bieger2015_widths,
-        opts.skip_flowpaths
+        skip_flowpaths,
+        opts.representative_flowpath
     );
 
     ThreadPoolBuilder::new()
@@ -73,7 +83,8 @@ fn main() -> Result<(), GdalError> {
         opts.clip_hillslopes,
         opts.clip_hillslope_length,
         opts.bieger2015_widths,
-        !opts.skip_flowpaths);
+        !skip_flowpaths,
+        opts.representative_flowpath);
 
     Ok(())
 }

@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::io::Result;
@@ -5,14 +6,15 @@ use std::mem::size_of;
 use std::path::Path;
 use std::time::Instant;
 
-use log::info;
+use log::{info, warn};
 use rayon::prelude::*;
 
 use crate::d8_wbt_to_topaz::remap_whitebox_d8_to_topaz_in_place;
+use crate::flowpath::Flowpath;
 use crate::flowpath_collection::FlowpathCollection;
 use crate::netw::write_network;
 use crate::raster::Raster;
-use crate::watershed_abstraction::{abstract_subcatchments, walk_channels};
+use crate::watershed_abstraction::{abstract_subcatchments, walk_channels, walk_flowpath, PATHS};
 use crate::wbt_netw::read_wbt_netw_tab;
 
 /// Find raster file, checking .tif first then .vrt as fallback
@@ -74,17 +76,24 @@ pub fn wbt_abstract_watershed(
     clip_hillslopes: bool,
     clip_hillslope_length: f64,
     bieger2015_widths: bool,
-    write_flowpaths: bool
+    write_flowpaths: bool,
+    representative_flowpath: bool,
 ) -> std::io::Result<()> {
     env::set_current_dir(&wd).unwrap();
+    let write_flowpaths = if representative_flowpath {
+        false
+    } else {
+        write_flowpaths
+    };
     info!(
-        "wbt_abstract_watershed: wd={}, max_points={}, clip_hillslopes={}, clip_hillslope_length={}, bieger2015_widths={}, write_flowpaths={}",
+        "wbt_abstract_watershed: wd={}, max_points={}, clip_hillslopes={}, clip_hillslope_length={}, bieger2015_widths={}, write_flowpaths={}, representative_flowpath={}",
         wd,
         max_points,
         clip_hillslopes,
         clip_hillslope_length,
         bieger2015_widths,
-        write_flowpaths
+        write_flowpaths,
+        representative_flowpath
     );
 
     let watershed_path = Path::new("watershed");
@@ -158,6 +167,24 @@ pub fn wbt_abstract_watershed(
         t0.elapsed().as_secs_f64()
     );
 
+    let discha: Option<Raster<f32>> = if representative_flowpath {
+        let t0 = Instant::now();
+        let discha_raster: Raster<f32> =
+            Raster::<f32>::read(&find_raster_path("dem/wbt/discha")).unwrap();
+        info!(
+            "loaded discha: {}x{} cells={} bytes={} (~{:.2} MiB) in {:.2}s",
+            discha_raster.width,
+            discha_raster.height,
+            discha_raster.data.len(),
+            discha_raster.data.len() * size_of::<f32>(),
+            (discha_raster.data.len() * size_of::<f32>()) as f64 / (1024.0 * 1024.0),
+            t0.elapsed().as_secs_f64()
+        );
+        Some(discha_raster)
+    } else {
+        None
+    };
+
     let t0 = Instant::now();
     let subwta_indices = subwta.indices_map();
     let channel_ids = subwta_indices.keys().filter(|&&id| id % 10 == 4).count();
@@ -203,16 +230,32 @@ pub fn wbt_abstract_watershed(
     log_flowpath_collection_stats("channels", &channels);
 
     let t0 = Instant::now();
-    let hillslopes: FlowpathCollection = abstract_subcatchments(
-        &subwta,
-        &subwta_indices,
-        &relief,
-        &flovec,
-        &fvslop,
-        &taspec,
-        &channels,
-        write_flowpaths,
-    );
+    let hillslopes: FlowpathCollection = if representative_flowpath {
+        let discha = discha
+            .as_ref()
+            .expect("discha raster required for representative flowpath mode");
+        abstract_subcatchments_representative(
+            &subwta,
+            &subwta_indices,
+            &relief,
+            &flovec,
+            &fvslop,
+            &taspec,
+            discha,
+            &channels,
+        )
+    } else {
+        abstract_subcatchments(
+            &subwta,
+            &subwta_indices,
+            &relief,
+            &flovec,
+            &fvslop,
+            &taspec,
+            &channels,
+            write_flowpaths,
+        )
+    };
     let subflow_count = hillslopes
         .subflows
         .as_ref()
@@ -280,4 +323,422 @@ pub fn wbt_abstract_watershed(
     info!("completed output tasks");
 
     Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct SeedCandidate {
+    index: usize,
+    discha: f32,
+    relief: f32,
+}
+
+fn build_source_cells(
+    indices: &Vec<usize>,
+    subwta: &Raster<i32>,
+    flovec: &Raster<u8>,
+) -> Vec<usize> {
+    let mut mask_indices: HashSet<usize> = HashSet::with_capacity(indices.len());
+    for &index in indices {
+        mask_indices.insert(index);
+    }
+
+    let mut has_upstream: HashSet<usize> = HashSet::new();
+    for &index in indices {
+        let flow_dir = flovec.data[index] as i32;
+        if flow_dir == 0 {
+            continue;
+        }
+        let Some((dx, dy)) = PATHS.get(&flow_dir) else {
+            continue;
+        };
+        let (x, y) = subwta.index_to_xy(index);
+        let next_x = x as isize + dx;
+        let next_y = y as isize + dy;
+        if next_x < 0
+            || next_y < 0
+            || next_x >= subwta.width as isize
+            || next_y >= subwta.height as isize
+        {
+            continue;
+        }
+        let next_index = subwta.xy_to_index(next_x as usize, next_y as usize);
+        if mask_indices.contains(&next_index) {
+            has_upstream.insert(next_index);
+        }
+    }
+
+    indices
+        .iter()
+        .copied()
+        .filter(|index| !has_upstream.contains(index))
+        .collect()
+}
+
+fn build_seed_candidates(
+    source_cells: &[usize],
+    discha: &Raster<f32>,
+    relief: &Raster<f32>,
+) -> Vec<SeedCandidate> {
+    let mut candidates = Vec::new();
+    let no_data = discha.no_data;
+    for &index in source_cells {
+        let d = discha.data[index];
+        if !d.is_finite() || d <= 0.0 {
+            continue;
+        }
+        if let Some(no_data_val) = no_data {
+            if d == no_data_val {
+                continue;
+            }
+        }
+        let r = relief.data[index];
+        candidates.push(SeedCandidate {
+            index,
+            discha: d,
+            relief: r,
+        });
+    }
+    candidates
+}
+
+fn flowpath_reaches_channel(
+    flowpath: &Flowpath,
+    subwta: &Raster<i32>,
+    flovec: &Raster<u8>,
+    topaz_id: i32,
+) -> bool {
+    let tail_index = match flowpath.indices.last() {
+        Some(&index) => index,
+        None => return false,
+    };
+    let flow_dir = flovec.data[tail_index] as i32;
+    if flow_dir == 0 {
+        return false;
+    }
+    let Some((dx, dy)) = PATHS.get(&flow_dir) else {
+        return false;
+    };
+    let (x, y) = subwta.index_to_xy(tail_index);
+    let next_x = x as isize + dx;
+    let next_y = y as isize + dy;
+    if next_x < 0
+        || next_y < 0
+        || next_x >= subwta.width as isize
+        || next_y >= subwta.height as isize
+    {
+        return false;
+    }
+    let next_index = subwta.xy_to_index(next_x as usize, next_y as usize);
+    let next_topaz_id = subwta.data[next_index];
+    next_topaz_id % 10 == 4 && next_topaz_id != topaz_id
+}
+
+fn select_representative_flowpath(
+    topaz_id: i32,
+    indices: &Vec<usize>,
+    subwta: &Raster<i32>,
+    relief: &Raster<f32>,
+    flovec: &Raster<u8>,
+    fvslop: &Raster<f32>,
+    taspec: &Raster<f32>,
+    discha: &Raster<f32>,
+) -> Flowpath {
+    let source_cells = build_source_cells(indices, subwta, flovec);
+    let mut candidates = build_seed_candidates(&source_cells, discha, relief);
+
+    if candidates.is_empty() {
+        warn!(
+            "representative_flowpath: no discha candidates for topaz_id={}, falling back to first index",
+            topaz_id
+        );
+        let seed_index = *indices.first().expect("missing hillslope indices");
+        return walk_flowpath(
+            topaz_id,
+            seed_index,
+            subwta,
+            relief,
+            flovec,
+            fvslop,
+            taspec,
+            -1,
+        );
+    }
+
+    candidates.sort_by(|a, b| {
+        a.discha
+            .partial_cmp(&b.discha)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                b.relief
+                    .partial_cmp(&a.relief)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .then_with(|| a.index.cmp(&b.index))
+    });
+
+    let mid = candidates.len() / 2;
+    let mut fallback_fp: Option<Flowpath> = None;
+    let mut order: Vec<usize> = Vec::with_capacity(candidates.len());
+    order.push(mid);
+    for offset in 1..candidates.len() {
+        if mid >= offset {
+            order.push(mid - offset);
+        }
+        let right = mid + offset;
+        if right < candidates.len() {
+            order.push(right);
+        }
+    }
+
+    for candidate_index in order {
+        let seed_index = candidates[candidate_index].index;
+        let fp = walk_flowpath(
+            topaz_id,
+            seed_index,
+            subwta,
+            relief,
+            flovec,
+            fvslop,
+            taspec,
+            -1,
+        );
+        if fallback_fp.is_none() {
+            fallback_fp = Some(fp.clone());
+        }
+        if flowpath_reaches_channel(&fp, subwta, flovec, topaz_id) {
+            return fp;
+        }
+    }
+
+    warn!(
+        "representative_flowpath: no candidate reached channel for topaz_id={}, using median fallback",
+        topaz_id
+    );
+    fallback_fp.expect("missing fallback representative flowpath")
+}
+
+fn build_representative_hillslope(
+    representative_fp: &Flowpath,
+    subwta: &Raster<i32>,
+    taspec: &Raster<f32>,
+    channels: &FlowpathCollection,
+    indices: &Vec<usize>,
+) -> Flowpath {
+    let cellsize: f64 = subwta.cellsize;
+    let cellsize2: f64 = cellsize * cellsize;
+    let topaz_id: i32 = representative_fp.topaz_id;
+    let area = indices.len() as f64 * cellsize2;
+
+    let chn_id: i32 = ((topaz_id as f64 / 10.0).floor() * 10.0) as i32 + 4;
+    let chn_summary: &Flowpath = &channels.get_fp_by_topaz_id(chn_id).unwrap();
+
+    let length: f64;
+    let width: f64;
+    if topaz_id % 10 == 1 {
+        length = representative_fp.length;
+        width = area / length;
+    } else {
+        width = chn_summary.length;
+        length = area / width;
+    }
+
+    let mut direction: f64 = chn_summary.direction;
+    match topaz_id % 10 {
+        2 => direction += 90.0,
+        3 => direction -= 90.0,
+        _ => (),
+    }
+
+    let aspect: f64 = taspec.determine_aspect(indices);
+    let centroid_px = subwta.centroid_of(indices);
+    let elevation = representative_fp.elevs[0];
+    let elev_drop = representative_fp.elevs[0] - representative_fp.elevs[representative_fp.elevs.len() - 1];
+    let slope_scalar = if length > 0.0 {
+        elev_drop / length
+    } else {
+        0.0
+    };
+
+    Flowpath::new(
+        representative_fp.indices.clone(),
+        representative_fp.head,
+        representative_fp.tail,
+        (centroid_px.0 as i32, centroid_px.1 as i32),
+        representative_fp.distances_norm.clone(),
+        representative_fp.slopes.clone(),
+        representative_fp.elevs.clone(),
+        topaz_id,
+        -1,
+        length,
+        width,
+        aspect,
+        direction,
+        slope_scalar,
+        cellsize,
+        elevation,
+        -1,
+        -1.0,
+    )
+}
+
+fn abstract_subcatchments_representative(
+    subwta: &Raster<i32>,
+    subwta_indices: &HashMap<i32, Vec<usize>>,
+    relief: &Raster<f32>,
+    flovec: &Raster<u8>,
+    fvslop: &Raster<f32>,
+    taspec: &Raster<f32>,
+    discha: &Raster<f32>,
+    channels: &FlowpathCollection,
+) -> FlowpathCollection {
+    let topaz_ids: Vec<i32> = subwta_indices
+        .keys()
+        .filter(|&&topaz_id| topaz_id % 10 != 4)
+        .cloned()
+        .collect();
+
+    let results: Vec<Flowpath> = topaz_ids
+        .into_par_iter()
+        .map(|topaz_id| {
+            let indices = subwta_indices
+                .get(&topaz_id)
+                .expect("missing indices for topaz_id");
+            let representative_fp = select_representative_flowpath(
+                topaz_id,
+                indices,
+                subwta,
+                relief,
+                flovec,
+                fvslop,
+                taspec,
+                discha,
+            );
+            build_representative_hillslope(
+                &representative_fp,
+                subwta,
+                taspec,
+                channels,
+                indices,
+            )
+        })
+        .collect();
+
+    FlowpathCollection {
+        flowpaths: results,
+        subflows: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::watershed_abstraction::walk_flowpaths;
+    use std::path::PathBuf;
+
+    fn fixture_wbt_path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/wbt/amiss-polyhedron/dem/wbt")
+    }
+
+    fn median(values: &mut [f64]) -> f64 {
+        values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let n = values.len();
+        if n % 2 == 0 {
+            (values[n / 2 - 1] + values[n / 2]) / 2.0
+        } else {
+            values[n / 2]
+        }
+    }
+
+    #[test]
+    fn representative_flowpath_uses_source_cells() {
+        let fixture = fixture_wbt_path();
+
+        let subwta = Raster::<i32>::read(fixture.join("subwta.tif").to_str().unwrap()).unwrap();
+        let relief = Raster::<f32>::read(fixture.join("relief.tif").to_str().unwrap()).unwrap();
+        let mut flovec =
+            Raster::<u8>::read(fixture.join("flovec.tif").to_str().unwrap()).unwrap();
+        let fvslop = Raster::<f32>::read(fixture.join("fvslop.tif").to_str().unwrap()).unwrap();
+        let taspec = Raster::<f32>::read(fixture.join("taspec.tif").to_str().unwrap()).unwrap();
+        let discha = Raster::<f32>::read(fixture.join("discha.tif").to_str().unwrap()).unwrap();
+
+        remap_whitebox_d8_to_topaz_in_place(&mut flovec);
+
+        let indices_map = subwta.indices_map();
+        for (topaz_id, indices) in indices_map {
+            if topaz_id <= 0 || topaz_id % 10 == 4 {
+                continue;
+            }
+
+            let flowpaths = walk_flowpaths(
+                topaz_id,
+                &indices,
+                &subwta,
+                &relief,
+                &flovec,
+                &fvslop,
+                &taspec,
+            );
+            let edge_flowpaths = flowpaths.get_edge_flowpaths2(&subwta, &flovec);
+            assert!(
+                !edge_flowpaths.is_empty(),
+                "missing edge flowpaths for topaz_id {}",
+                topaz_id
+            );
+
+            let edge_heads: HashSet<usize> = edge_flowpaths
+                .iter()
+                .filter_map(|fp| fp.indices.first().copied())
+                .collect();
+
+            let rep_fp = select_representative_flowpath(
+                topaz_id,
+                &indices,
+                &subwta,
+                &relief,
+                &flovec,
+                &fvslop,
+                &taspec,
+                &discha,
+            );
+            let rep_head = *rep_fp
+                .indices
+                .first()
+                .expect("representative flowpath missing head");
+            assert!(
+                edge_heads.contains(&rep_head),
+                "representative head not a source cell for topaz_id {}",
+                topaz_id
+            );
+
+            let mut edge_lengths: Vec<f64> =
+                edge_flowpaths.iter().map(|fp| fp.length).collect();
+            let min_len = edge_lengths
+                .iter()
+                .cloned()
+                .fold(f64::INFINITY, f64::min);
+            let max_len = edge_lengths
+                .iter()
+                .cloned()
+                .fold(f64::NEG_INFINITY, f64::max);
+            let rep_len = rep_fp.length;
+            assert!(
+                rep_len >= min_len - 1e-6 && rep_len <= max_len + 1e-6,
+                "representative length out of edge range for topaz_id {}",
+                topaz_id
+            );
+
+            if topaz_id % 10 == 1 {
+                let median_len = median(&mut edge_lengths);
+                println!(
+                    "representative_flowpath topaz_id={} edge_count={} median_len={:.2} rep_len={:.2} ratio={:.3}",
+                    topaz_id,
+                    edge_lengths.len(),
+                    median_len,
+                    rep_len,
+                    rep_len / median_len
+                );
+            }
+        }
+    }
 }

@@ -30,8 +30,8 @@ The working directory passed to any binary is mutated in place. The following st
       fvslop.tif  # or fvslop.vrt
       taspec.tif  # or taspec.vrt
       netw.tsv    # for `wbt_abstract_watershed`
-      floaccum.tif # optional; planned representative flowpath mode
-      discha.tif   # optional; planned representative flowpath mode
+      floaccum.tif # optional; representative flowpath mode
+      discha.tif   # optional; representative flowpath mode
   ag_fields/      # for `sub_fields_abstraction`
     field_boundaries.tif
 ```
@@ -86,13 +86,13 @@ Data outputs:
 - Optional `flowpaths.csv` + `slope_files/flowpaths/fps_<topaz_id>.slps` with per-pixel subflowpaths.
 - `channels.geojson` and `network.txt` for diagnostics.
 
-## Representative flowpath mode (planned)
+## Representative flowpath mode (WBT only)
 
-Goal: replace the per-pixel `walk_flowpaths` step with a single, deterministic flowpath per hillslope chosen using distance-to-channel (and optionally flow-accumulation) rasters.
+Goal: replace the per-pixel `walk_flowpaths` step with a single, deterministic flowpath per hillslope chosen using distance-to-channel (and optionally flow-accumulation) rasters. Enable with `--representative-flowpath` on `wbt_abstract_watershed`.
 
 Inputs:
 
-- `dem/wbt/floaccum.tif` - flow accumulation (WBT output) aligned to `subwta`.
+- `dem/wbt/floaccum.tif` - flow accumulation (WBT output) aligned to `subwta` (reserved for future heuristics).
 - `dem/wbt/discha.tif` - distance-to-channel (WBT output) aligned to `subwta`.
 
 High-level approach:
@@ -105,6 +105,8 @@ High-level approach:
 - Emit the same outputs as today, but always skip `flowpaths.csv` and `slope_files/flowpaths` in representative mode (equivalent to forcing `--skip-flowpaths`).
 
 Design note: using the median source-cell `discha` value keeps representative lengths closer to the current algorithm that averages source-cell flowpaths. A max-`discha` seed would bias lengths longer, shorten inferred widths (area / length), and could push erosion rates higher.
+
+Validation note: on the bundled `amiss-polyhedron` WBT fixture, representative lengths match the median source-cell flowpath lengths within ~1% for tested hillslopes.
 
 ## Building
 
@@ -123,15 +125,20 @@ cargo build --release
 
 ## Running the binaries
 
+WEPP supports up to 100 points per slope profile; we recommend keeping `--max-points` at or below 30.
+
 ```bash
 ./target/release/abstract_watershed /path/to/run \
-  --ncpu 8 --max-points 120 --clip-hillslopes --clip-hillslope-length 300
+  --ncpu 8 --max-points 30 --clip-hillslopes --clip-hillslope-length 300
 
 ./target/release/wbt_abstract_watershed /path/to/run \
-  --ncpu 8 --max-points 120 --bieger2015-widths
+  --ncpu 8 --max-points 30 --bieger2015-widths
+
+./target/release/wbt_abstract_watershed /path/to/run \
+  --ncpu 8 --max-points 30 --representative-flowpath
 
 ./target/release/sub_fields_abstraction /path/to/run \
-  --ncpu 8 --max-points 120 \
+  --ncpu 8 --max-points 30 \
   --sub-field-min-area-threshold-m2 500 \
   --field-raster ag_fields/field_boundaries.tif \
   --output-dir ag_fields/sub_fields
@@ -144,6 +151,7 @@ Key options:
 - `--clip-hillslopes` and `--clip-hillslope-length` clip hillslope profiles to a maximum physical length.
 - `--bieger2015-widths` uses the Bieger (2015) regressions to infer channel widths from drainage area.
 - `--skip-flowpaths` (abstract_watershed, wbt_abstract_watershed) omits `flowpaths.csv` and `slope_files/flowpaths`.
+- `--representative-flowpath` (wbt_abstract_watershed) uses a single seed per hillslope from `discha.tif` and forces `--skip-flowpaths`.
 - `--sub-field-min-area-threshold-m2` (sub_fields_abstraction) drops field/subcatchment intersections smaller than the specified area.
 - `--field-raster` and `--output-dir` let you override the default AgFields raster location and output directory when running the sub-field tool.
 
