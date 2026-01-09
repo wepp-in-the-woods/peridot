@@ -1,6 +1,6 @@
 use std::fmt;
 use std::error::Error;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::iter::zip;
 
 use core::any::Any;
@@ -330,6 +330,18 @@ impl FromF64 for f64 {
     }
 }
 
+impl FromF64 for f32 {
+    fn from_f64(value: f64) -> Self {
+        value as f32
+    }
+}
+
+impl FromF64 for u8 {
+    fn from_f64(value: f64) -> Self {
+        value as u8
+    }
+}
+
 
 pub trait ToF64 {
     fn to_f64(&self) -> f64;
@@ -344,6 +356,18 @@ impl ToF64 for i32 {
 impl ToF64 for f64 {
     fn to_f64(&self) -> f64 {
         *self
+    }
+}
+
+impl ToF64 for f32 {
+    fn to_f64(&self) -> f64 {
+        *self as f64
+    }
+}
+
+impl ToF64 for u8 {
+    fn to_f64(&self) -> f64 {
+        *self as f64
     }
 }
 
@@ -643,6 +667,26 @@ impl Raster<i32> {
         }
         indices
     }
+
+    pub fn indices_map(&self) -> HashMap<i32, Vec<usize>> {
+        let mut indices_map: HashMap<i32, Vec<usize>> = HashMap::new();
+        let no_data = self.no_data;
+
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let index = y * self.width + x;
+                let value = self.data[index];
+                if no_data.map_or(true, |nd| value != nd) {
+                    indices_map
+                        .entry(value)
+                        .or_insert_with(Vec::new)
+                        .push(index);
+                }
+            }
+        }
+
+        indices_map
+    }
 }
 
 pub trait ToIndices {
@@ -695,18 +739,19 @@ impl<T> Raster<T> {
 }
 
 
-impl Raster<f64> {
-
+impl<T: ToF64> Raster<T> {
     #[allow(dead_code)]
     pub fn determine_aspect<I: ToIndices>(&self, indices: &I) -> f64 {
-        assert!(self.map_type == MapType::TASPEC, 
-            "Raster must be TASPEC type to determine aspect");
-    
+        assert!(
+            self.map_type == MapType::TASPEC,
+            "Raster must be TASPEC type to determine aspect"
+        );
+
         let indices_vec = indices.to_indices();
-    
+
         let mut rad_aspects: Vec<f64> = Vec::new();
         for &index in &indices_vec {
-            let deg_aspect = self.data[index];
+            let deg_aspect = self.data[index].to_f64();
             rad_aspects.push(deg_aspect.to_radians());
         }
         let mut aspect = circmean(rad_aspects.as_slice()).to_degrees();
@@ -849,7 +894,14 @@ impl<T: std::fmt::Display + std::cmp::PartialEq + Any> Raster<T> {
                 let index = y * self.width + x;
                 let value = &self.data[index];
                 if no_data.is_none() || value != no_data.unwrap() {
-                    let character = match (value as &dyn Any).downcast_ref::<i32>() {
+                    let flow_dir = if let Some(v) = (value as &dyn Any).downcast_ref::<i32>() {
+                        Some(*v)
+                    } else if let Some(v) = (value as &dyn Any).downcast_ref::<u8>() {
+                        Some(*v as i32)
+                    } else {
+                        None
+                    };
+                    let character = match flow_dir {
                         Some(1) => "↖",
                         Some(2) => "↑",
                         Some(3) => "↗",

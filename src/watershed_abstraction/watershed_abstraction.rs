@@ -61,7 +61,8 @@ pub fn abstract_watershed(
     max_points: usize,
     clip_hillslopes: bool,
     clip_hillslope_length: f64,
-    bieger2015_widths: bool
+    bieger2015_widths: bool,
+    write_flowpaths: bool
 ) -> std::io::Result<()> {
     env::set_current_dir(&wd).unwrap();
 
@@ -76,27 +77,50 @@ pub fn abstract_watershed(
     let _ = std::fs::create_dir_all(Path::new("watershed").join("slope_files/flowpaths"));
 
     let subwta: Raster<i32> = Raster::<i32>::read("dem/topaz/SUBWTA.ARC").unwrap(); // hillslope with topaz_ids file, channels end with 4 (e.g 24, 34, 44), subcatchments end with 1, 2, 3. It starts at 22
-    let relief: Raster<f64> = Raster::<f64>::read("dem/topaz/RELIEF.ARC").unwrap(); // dem
-    let flovec: Raster<i32> = Raster::<i32>::read("dem/topaz/FLOVEC.ARC").unwrap(); // d8 flowvec
-    let fvslop: Raster<f64> = Raster::<f64>::read("dem/topaz/FVSLOP.ARC").unwrap(); // slope
-    let taspec: Raster<f64> = Raster::<f64>::read("dem/topaz/TASPEC.ARC").unwrap(); // aspect
+    let relief: Raster<f32> = Raster::<f32>::read("dem/topaz/RELIEF.ARC").unwrap(); // dem
+    let flovec: Raster<u8> = Raster::<u8>::read("dem/topaz/FLOVEC.ARC").unwrap(); // d8 flowvec
+    let fvslop: Raster<f32> = Raster::<f32>::read("dem/topaz/FVSLOP.ARC").unwrap(); // slope
+    let taspec: Raster<f32> = Raster::<f32>::read("dem/topaz/TASPEC.ARC").unwrap(); // aspect
+
+    let subwta_indices = subwta.indices_map();
 
     // this is a ASCII tabular report with channel node connection information
     let (netw, network) = read_netw_tab("dem/topaz/NETW.TAB", &subwta).unwrap();
     let _ = write_network("watershed/network.txt", &network);
 
-    let channels: FlowpathCollection = walk_channels(&subwta, &relief, &flovec, &fvslop, &taspec, &netw, bieger2015_widths);
-    let hillslopes: FlowpathCollection = abstract_subcatchments(&subwta, &relief, &flovec, &fvslop, &taspec, &channels);
+    let channels: FlowpathCollection = walk_channels(
+        &subwta,
+        &subwta_indices,
+        &relief,
+        &flovec,
+        &fvslop,
+        &taspec,
+        &netw,
+        bieger2015_widths,
+    );
+    let hillslopes: FlowpathCollection = abstract_subcatchments(
+        &subwta,
+        &subwta_indices,
+        &relief,
+        &flovec,
+        &fvslop,
+        &taspec,
+        &channels,
+        write_flowpaths,
+    );
 
-    let tasks: Vec<Box<dyn FnOnce() -> Result<()> + Send>> = vec![
+    let mut tasks: Vec<Box<dyn FnOnce() -> Result<()> + Send>> = vec![
         Box::new(|| channels.write_channel_slp("watershed/slope_files/channels.slp", max_points)),
         Box::new(|| channels.write_chn_metadata_to_csv("watershed/channels.csv", &subwta.wgs_transform)),
         Box::new(|| hillslopes.write_slps("watershed/slope_files/hillslopes/", max_points, clip_hillslopes, clip_hillslope_length)),
         Box::new(|| hillslopes.write_metadata_to_csv("watershed/hillslopes.csv", &subwta.wgs_transform)),
-        Box::new(|| hillslopes.write_subflows_metadata_to_csv("watershed/flowpaths.csv", &subwta.wgs_transform)),
-        Box::new(|| hillslopes.write_subflow_slps("watershed/slope_files/flowpaths/", max_points)),
         Box::new(|| channels.write_geojson(&subwta, "watershed/channels.geojson")),
     ];
+
+    if write_flowpaths {
+        tasks.push(Box::new(|| hillslopes.write_subflows_metadata_to_csv("watershed/flowpaths.csv", &subwta.wgs_transform)));
+        tasks.push(Box::new(|| hillslopes.write_subflow_slps("watershed/slope_files/flowpaths/", max_points)));
+    }
 
     // Execute tasks in parallel
     tasks.into_par_iter().map(|f| f()).collect::<Result<Vec<_>>>()?;
@@ -108,35 +132,78 @@ pub fn abstract_watershed(
 #[allow(dead_code)]
 pub fn abstract_subcatchments(
     subwta: &Raster<i32>,
-    relief: &Raster<f64>,
-    flovec: &Raster<i32>,
-    fvslop: &Raster<f64>,
-    taspec: &Raster<f64>,
-    channels: &FlowpathCollection
+    subwta_indices: &HashMap<i32, Vec<usize>>,
+    relief: &Raster<f32>,
+    flovec: &Raster<u8>,
+    fvslop: &Raster<f32>,
+    taspec: &Raster<f32>,
+    channels: &FlowpathCollection,
+    write_flowpaths: bool
 ) -> FlowpathCollection {
 
-    let unique: HashSet<i32> = subwta.unique_values();
-    let topaz_ids: Vec<i32> = unique.into_iter().filter(|&topaz_id| topaz_id % 10 != 4).collect();
+    let topaz_ids: Vec<i32> = subwta_indices
+        .keys()
+        .filter(|&&topaz_id| topaz_id % 10 != 4)
+        .cloned()
+        .collect();
     let mut hillslope_abstractions: FlowpathCollection = FlowpathCollection {
         flowpaths: Vec::new(),
-        subflows: Some(HashMap::<i32, FlowpathCollection>::new())
+        subflows: if write_flowpaths {
+            Some(HashMap::<i32, FlowpathCollection>::new())
+        } else {
+            None
+        },
     };
 
-    // iterate over field and relief rasters
-    let results: Vec<(Flowpath, i32, FlowpathCollection)> = topaz_ids.into_par_iter()
-        .map(|topaz_id| {
-            let flowpaths: FlowpathCollection = walk_flowpaths(topaz_id, &subwta, &relief, &flovec, &fvslop, &taspec);
-            let subcatchment: Flowpath = flowpaths.abstract_subcatchment(
-                &subwta,
-                &taspec,
-                &channels);
-            (subcatchment, topaz_id, flowpaths)
-        })
-        .collect();
+    if write_flowpaths {
+        let results: Vec<(Flowpath, i32, FlowpathCollection)> = topaz_ids
+            .into_par_iter()
+            .map(|topaz_id| {
+                let indices = subwta_indices
+                    .get(&topaz_id)
+                    .expect("missing indices for topaz_id");
+                let flowpaths: FlowpathCollection =
+                    walk_flowpaths(topaz_id, indices, &subwta, &relief, &flovec, &fvslop, &taspec);
+                let subcatchment: Flowpath = flowpaths.abstract_subcatchment(
+                    &subwta,
+                    &taspec,
+                    &channels,
+                    indices,
+                );
+                (subcatchment, topaz_id, flowpaths)
+            })
+            .collect();
 
-    for (subcatchment, topaz_id, flowpaths) in results {
-        hillslope_abstractions.flowpaths.push(subcatchment);
-        hillslope_abstractions.subflows.as_mut().unwrap().insert(topaz_id, flowpaths);
+        for (subcatchment, topaz_id, flowpaths) in results {
+            hillslope_abstractions.flowpaths.push(subcatchment);
+            hillslope_abstractions
+                .subflows
+                .as_mut()
+                .unwrap()
+                .insert(topaz_id, flowpaths);
+        }
+    } else {
+        let results: Vec<(Flowpath, i32)> = topaz_ids
+            .into_par_iter()
+            .map(|topaz_id| {
+                let indices = subwta_indices
+                    .get(&topaz_id)
+                    .expect("missing indices for topaz_id");
+                let flowpaths: FlowpathCollection =
+                    walk_flowpaths(topaz_id, indices, &subwta, &relief, &flovec, &fvslop, &taspec);
+                let subcatchment: Flowpath = flowpaths.abstract_subcatchment(
+                    &subwta,
+                    &taspec,
+                    &channels,
+                    indices,
+                );
+                (subcatchment, topaz_id)
+            })
+            .collect();
+
+        for (subcatchment, _topaz_id) in results {
+            hillslope_abstractions.flowpaths.push(subcatchment);
+        }
     }
 
     hillslope_abstractions
@@ -146,23 +213,30 @@ pub fn abstract_subcatchments(
 #[allow(dead_code)]
 pub fn walk_channels<T: LinkAttributes>(
     subwta: &Raster<i32>,
-    relief: &Raster<f64>,
-    flovec: &Raster<i32>,
-    fvslop: &Raster<f64>,
-    taspec: &Raster<f64>,
+    subwta_indices: &HashMap<i32, Vec<usize>>,
+    relief: &Raster<f32>,
+    flovec: &Raster<u8>,
+    fvslop: &Raster<f32>,
+    taspec: &Raster<f32>,
     netw:   &HashMap<i32, T>,
     bieger2015_widths: bool
 ) -> FlowpathCollection
 where
     T: LinkAttributes + Sync, {
 
-    let unique_vals = subwta.unique_values();
-    let mut topaz_ids: Vec<i32> = unique_vals.iter().filter(|&&topaz_id| topaz_id % 10 == 4).cloned().collect();
+    let mut topaz_ids: Vec<i32> = subwta_indices
+        .keys()
+        .filter(|&&topaz_id| topaz_id % 10 == 4)
+        .cloned()
+        .collect();
     topaz_ids.sort();
 
     let flowpaths: Vec<Flowpath> = topaz_ids.into_par_iter()
         .map(|topaz_id| walk_channel(
             topaz_id, 
+            subwta_indices
+                .get(&topaz_id)
+                .expect("missing indices for topaz_id"),
             &subwta, 
             &relief, 
             &flovec, 
@@ -182,25 +256,25 @@ where
 #[allow(dead_code)]
 pub fn walk_channel(
     topaz_id: i32,
+    indices: &Vec<usize>,
     subwta: &Raster<i32>,
-    relief: &Raster<f64>,
-    _flovec: &Raster<i32>,
-    fvslop: &Raster<f64>,
-    taspec: &Raster<f64>,
+    relief: &Raster<f32>,
+    _flovec: &Raster<u8>,
+    fvslop: &Raster<f32>,
+    taspec: &Raster<f32>,
     areaup: f64,
     order: i32,
     bieger2015_widths: bool
 ) -> Flowpath {
     // get hashset of indices of topaz_id
-    let indices: HashSet<usize> = subwta.indices_of(topaz_id);
-    assert!(indices.len() > 0, "indices.len() == 0 for topaz_id: {}", topaz_id);
+    assert!(!indices.is_empty(), "indices.len() == 0 for topaz_id: {}", topaz_id);
 
     let cellsize = subwta.cellsize;
 
     // build hashmap of indices and elevations
     let mut elevs_d: HashMap<usize, f64> = HashMap::new();
-    for i in &indices {
-        elevs_d.insert(*i, relief.data[*i]);
+    for i in indices {
+        elevs_d.insert(*i, relief.data[*i] as f64);
     }
 
     // build Vec<i32> of indices in descending order of elevation
@@ -227,10 +301,10 @@ pub fn walk_channel(
     let mut rad_aspects: Vec<f64> = Vec::new();
     for i in 0..n {
         let index = sorted_indices[i];
-        let slope = fvslop.data[index];
+        let slope = fvslop.data[index] as f64;
         slopes.push(slope);
 
-        let deg_aspect = taspec.data[index];
+        let deg_aspect = taspec.data[index] as f64;
         rad_aspects.push(deg_aspect.to_radians());
     }
 
@@ -239,7 +313,7 @@ pub fn walk_channel(
         aspect += 360.0; // ensure aspect is in [0, 360) range
     }
 
-    let (centroid_x, centroid_y) = subwta.centroid_of(&indices);
+    let (centroid_x, centroid_y) = subwta.centroid_of(indices);
 
     let (x_usize, y_usize) = subwta.index_to_xy(sorted_indices[0]);
     let head = (x_usize as i32, y_usize as i32);
@@ -311,21 +385,20 @@ pub fn walk_channel(
 #[allow(dead_code)]
 pub fn walk_flowpaths(
     topaz_id: i32,
+    indices: &Vec<usize>,
     subwta: &Raster<i32>,
-    relief: &Raster<f64>,
-    flovec: &Raster<i32>,
-    fvslop: &Raster<f64>,
-    taspec: &Raster<f64>,
+    relief: &Raster<f32>,
+    flovec: &Raster<u8>,
+    fvslop: &Raster<f32>,
+    taspec: &Raster<f32>,
 ) -> FlowpathCollection {
 
-    let indices = subwta.indices_of(topaz_id);
-    let indices_vec: Vec<_> = indices.iter().collect();
-    let flowpaths: Vec<Flowpath> = indices_vec.iter()
+    let flowpaths: Vec<Flowpath> = indices.iter()
         .enumerate()
         .map(|(i, &head_index)| {
             walk_flowpath(
                 topaz_id,
-                *head_index,
+                head_index,
                 &subwta,
                 &relief,
                 &flovec,
@@ -347,10 +420,10 @@ pub fn walk_flowpath(
     topaz_id: i32,
     head_index: usize,
     subwta: &Raster<i32>,
-    relief: &Raster<f64>,
-    flovec: &Raster<i32>,
-    fvslop: &Raster<f64>,
-    taspec: &Raster<f64>,
+    relief: &Raster<f32>,
+    flovec: &Raster<u8>,
+    fvslop: &Raster<f32>,
+    taspec: &Raster<f32>,
     fp_id: i32
 ) -> Flowpath {
     assert_eq!(subwta.data[head_index], topaz_id);
@@ -364,7 +437,7 @@ pub fn walk_flowpath(
     let mut distances: Vec<f64> = vec![0.0];
     let mut i = 0;
     loop {
-        let flow_dir: i32 = flovec.data[current_index];
+        let flow_dir: i32 = flovec.data[current_index] as i32;
 
         if flow_dir == 0 {
             println!("Warning: flow_dir is 0 at index {} for topaz_id {}", current_index, topaz_id);
@@ -408,13 +481,13 @@ pub fn walk_flowpath(
     let mut elevs: Vec<f64> = Vec::new();
     for i in 0..n {
         let index: usize = sorted_indices[i];
-        let slope: f64 = fvslop.data[index];
+        let slope: f64 = fvslop.data[index] as f64;
         slopes.push(slope);
 
-        let deg_aspect = taspec.data[index];
+        let deg_aspect = taspec.data[index] as f64;
         rad_aspects.push(deg_aspect.to_radians());
 
-        let elev: f64 = relief.data[index];
+        let elev: f64 = relief.data[index] as f64;
         elevs.push(elev);
     }
     let elevation: f64 = elevs[0];

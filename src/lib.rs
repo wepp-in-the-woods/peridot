@@ -1,6 +1,7 @@
 extern crate lazy_static;
 
 pub mod rasters;
+pub mod logging;
 pub mod support;
 pub mod topaz;
 pub mod wbt;

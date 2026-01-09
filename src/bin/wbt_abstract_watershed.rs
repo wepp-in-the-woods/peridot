@@ -1,9 +1,12 @@
 extern crate clap;
 
-use gdal::errors::GdalError;
-use rayon::ThreadPoolBuilder;
 use clap::Parser;
+use gdal::errors::GdalError;
+use log::info;
+use rayon::ThreadPoolBuilder;
+use std::path::Path;
 
+use peridot::logging::init_logging;
 use peridot::wbt_watershed_abstraction::wbt_abstract_watershed;
 
 #[derive(Parser)]
@@ -39,10 +42,25 @@ struct Opts {
     /// Whether to calculate channel widths using Bieger 2015 fits based on uparea
     #[clap(short, long, default_value = "false")]
     bieger2015_widths: bool,
+
+    /// Skip writing flowpaths outputs (flowpaths.csv and slope_files/flowpaths)
+    #[clap(long, default_value = "false")]
+    skip_flowpaths: bool,
 }
 
 fn main() -> Result<(), GdalError> {
     let opts: Opts = Opts::parse();
+    init_logging(Path::new(&opts.path_to_wd));
+    info!(
+        "wbt_abstract_watershed start: wd={}, ncpu={}, max_points={}, clip_hillslopes={}, clip_hillslope_length={}, bieger2015_widths={}, skip_flowpaths={}",
+        opts.path_to_wd,
+        opts.ncpu,
+        opts.max_points,
+        opts.clip_hillslopes,
+        opts.clip_hillslope_length,
+        opts.bieger2015_widths,
+        opts.skip_flowpaths
+    );
 
     ThreadPoolBuilder::new()
         .num_threads(opts.ncpu)
@@ -54,7 +72,8 @@ fn main() -> Result<(), GdalError> {
         opts.max_points,
         opts.clip_hillslopes,
         opts.clip_hillslope_length,
-        opts.bieger2015_widths);
+        opts.bieger2015_widths,
+        !opts.skip_flowpaths);
 
     Ok(())
 }

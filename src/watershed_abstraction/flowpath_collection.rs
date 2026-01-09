@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Result, Write};
 use std::path::Path;
@@ -154,15 +154,13 @@ impl FlowpathCollection {
     #[allow(dead_code)]
     pub fn abstract_subcatchment(&self,
         subwta: &Raster<i32>,
-        taspec: &Raster<f64>,
-        channels: &FlowpathCollection) -> Flowpath {
+        taspec: &Raster<f32>,
+        channels: &FlowpathCollection,
+        indices: &Vec<usize>) -> Flowpath {
 
         let cellsize: f64 = subwta.cellsize;
         let cellsize2: f64 = cellsize * cellsize;
         let topaz_id: i32 = self.flowpaths[0].topaz_id;
-
-        // get indices of subcatchment
-        let indices: HashSet<usize> = subwta.indices_of(topaz_id);
         let area = indices.len() as f64 * cellsize2;
 
         // find corresponding chn_id
@@ -196,14 +194,14 @@ impl FlowpathCollection {
         }
 
         // determine aspect
-        let aspect: f64 = taspec.determine_aspect(&indices);
+        let aspect: f64 = taspec.determine_aspect(indices);
 
         // calculate weighted slope from flowpaths
         let (w_slopes, distances, distances_norm): (Vec<f64>, Vec<f64>, Vec<f64>) =
             self.weighted_slope_average_from_fps();
 
         let longest_fp: &Flowpath = self.get_longest_fp();
-        let centroid_px = subwta.centroid_of(&indices);
+        let centroid_px = subwta.centroid_of(indices);
 
         assert!(distances.len() > 1, "distances {:?}", distances);
 
@@ -220,7 +218,7 @@ impl FlowpathCollection {
         let slope_scalar: f64 = (elevs[0] - elevs[elevs.len() - 1]) / length;
         let elevation: f64 = elevs[0];
 
-        let vec_indices: Vec<usize> = indices.into_iter().collect();
+        let vec_indices: Vec<usize> = indices.clone();
         Flowpath::new(
             vec_indices,
             longest_fp.head,
@@ -246,16 +244,14 @@ impl FlowpathCollection {
     #[allow(dead_code)]
     pub fn abstract_subfieldcatchment(&self,
         intersection_subwta: &Raster<i32>,
-        taspec: &Raster<f64>
+        taspec: &Raster<f32>,
+        indices: &Vec<usize>
     ) -> Flowpath {
 
 
         let cellsize: f64 = intersection_subwta.cellsize;
         let cellsize2: f64 = cellsize * cellsize;
         let fake_topaz_id: i32 = self.flowpaths[0].topaz_id;
-
-        // get indices of subcatchment
-        let indices: HashSet<usize> = intersection_subwta.indices_of(fake_topaz_id);
         let area = indices.len() as f64 * cellsize2;
 
         let longest_fp = self.get_longest_fp();
@@ -271,14 +267,14 @@ impl FlowpathCollection {
         let direction : f64 = longest_fp.direction;
 
         // determine aspect
-        let aspect: f64 = taspec.determine_aspect(&indices);
+        let aspect: f64 = taspec.determine_aspect(indices);
 
         // calculate weighted slope from flowpaths
         let (w_slopes, distances, distances_norm): (Vec<f64>, Vec<f64>, Vec<f64>) =
             self.weighted_slope_average_from_fps();
 
         let longest_fp: &Flowpath = self.get_longest_fp();
-        let centroid_px = intersection_subwta.centroid_of(&indices);
+        let centroid_px = intersection_subwta.centroid_of(indices);
 
         assert!(distances.len() > 1, "distances {:?}", distances);
 
@@ -295,7 +291,7 @@ impl FlowpathCollection {
         let slope_scalar: f64 = (elevs[0] - elevs[elevs.len() - 1]) / length;
         let elevation: f64 = elevs[0];
 
-        let vec_indices: Vec<usize> = indices.into_iter().collect();
+        let vec_indices: Vec<usize> = indices.clone();
         Flowpath::new(
             vec_indices,
             longest_fp.head,
@@ -875,4 +871,3 @@ fn flowpaths_median_length(flowpaths: &Vec<Flowpath>) -> Option<f64> {
         Some(lengths[num_flowpaths / 2])
     }
 }
-

@@ -1,9 +1,12 @@
 extern crate clap;
 
 use clap::Parser;
+use log::info;
 use rayon::ThreadPoolBuilder;
 use std::io;
+use std::path::Path;
 
+use peridot::logging::init_logging;
 use peridot::wbt_sub_fields_abstraction::wbt_sub_fields_abstraction;
 
 #[derive(Parser)]
@@ -51,6 +54,18 @@ struct Opts {
 
 fn main() -> io::Result<()> {
     let opts: Opts = Opts::parse();
+    init_logging(Path::new(&opts.path_to_wd));
+    info!(
+        "sub_fields_abstraction start: wd={}, ncpu={}, max_points={}, clip_hillslopes={}, clip_hillslope_length={}, sub_field_min_area_threshold_m2={}, field_raster={}, output_dir={}",
+        opts.path_to_wd,
+        opts.ncpu,
+        opts.max_points,
+        opts.clip_hillslopes,
+        opts.clip_hillslope_length,
+        opts.sub_field_min_area_threshold_m2,
+        opts.field_raster,
+        opts.output_dir
+    );
 
     ThreadPoolBuilder::new()
         .num_threads(opts.ncpu)
