@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{Result, Write};
 use std::path::Path;
@@ -11,6 +11,7 @@ use crate::douglas_peucker::douglas_peucker;
 use crate::raster::{px_to_wgs, Raster};
 use crate::support::interpolate_slp;
 use crate::flowpath::Flowpath;
+use crate::watershed_abstraction::PATHS;
 
 #[derive(Debug, Clone)]
 pub struct FlowpathCollection {
@@ -155,6 +156,7 @@ impl FlowpathCollection {
     pub fn abstract_subcatchment(&self,
         subwta: &Raster<i32>,
         taspec: &Raster<f32>,
+        flovec: &Raster<u8>,
         channels: &FlowpathCollection,
         indices: &Vec<usize>) -> Flowpath {
 
@@ -174,7 +176,7 @@ impl FlowpathCollection {
         let width: f64;
         if topaz_id % 10 == 1 {
             // find length by finding each pixels and then taking the median length of the flowpaths originating from those edge pixels.
-            let edge_flowpaths = self.get_edge_flowpaths();
+            let edge_flowpaths = self.get_edge_flowpaths2(subwta, flovec);
             length = flowpaths_median_length(&edge_flowpaths).unwrap_or(0.0);
             width = area / length;
         } else {
@@ -245,6 +247,7 @@ impl FlowpathCollection {
     pub fn abstract_subfieldcatchment(&self,
         intersection_subwta: &Raster<i32>,
         taspec: &Raster<f32>,
+        flovec: &Raster<u8>,
         indices: &Vec<usize>
     ) -> Flowpath {
 
@@ -260,7 +263,7 @@ impl FlowpathCollection {
         let width: f64;
         
         // find length by finding each pixels and then taking the median length of the flowpaths originating from those edge pixels.
-        let edge_flowpaths = self.get_edge_flowpaths();
+        let edge_flowpaths = self.get_edge_flowpaths2(intersection_subwta, flovec);
         length = flowpaths_median_length(&edge_flowpaths).unwrap_or(0.0);
         width = area / length;
 
@@ -813,6 +816,7 @@ impl FlowpathCollection {
     }
 
     // Method to find edge flowpaths
+    #[deprecated(note = "Use get_edge_flowpaths2 with subwta+flovec for faster, source-cell detection.")]
     pub fn get_edge_flowpaths(&self) -> Vec<Flowpath> {
         let mut edge_flowpaths = Vec::new();
 
@@ -839,6 +843,59 @@ impl FlowpathCollection {
             // If is_edge remains true, add to result vector
             if is_edge {
                 edge_flowpaths.push(self.flowpaths[i].clone());
+            }
+        }
+
+        edge_flowpaths
+    }
+
+    #[allow(dead_code)]
+    pub fn get_edge_flowpaths2(
+        &self,
+        subwta: &Raster<i32>,
+        flovec: &Raster<u8>,
+    ) -> Vec<Flowpath> {
+        let mut mask_indices: HashSet<usize> = HashSet::new();
+        for fp in &self.flowpaths {
+            for &index in &fp.indices {
+                mask_indices.insert(index);
+            }
+        }
+
+        let mut has_upstream: HashSet<usize> = HashSet::new();
+        for &index in &mask_indices {
+            let flow_dir = flovec.data[index] as i32;
+            if flow_dir == 0 {
+                continue;
+            }
+
+            let Some((dx, dy)) = PATHS.get(&flow_dir) else {
+                continue;
+            };
+            let (x, y) = subwta.index_to_xy(index);
+            let next_x = x as isize + dx;
+            let next_y = y as isize + dy;
+            if next_x < 0
+                || next_y < 0
+                || next_x >= subwta.width as isize
+                || next_y >= subwta.height as isize
+            {
+                continue;
+            }
+            let next_index = subwta.xy_to_index(next_x as usize, next_y as usize);
+            if mask_indices.contains(&next_index) {
+                has_upstream.insert(next_index);
+            }
+        }
+
+        let mut edge_flowpaths = Vec::new();
+        for fp in &self.flowpaths {
+            let first_index = match fp.indices.first() {
+                Some(&index) => index,
+                None => continue,
+            };
+            if !has_upstream.contains(&first_index) {
+                edge_flowpaths.push(fp.clone());
             }
         }
 

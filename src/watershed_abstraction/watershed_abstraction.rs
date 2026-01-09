@@ -167,6 +167,7 @@ pub fn abstract_subcatchments(
                 let subcatchment: Flowpath = flowpaths.abstract_subcatchment(
                     &subwta,
                     &taspec,
+                    &flovec,
                     &channels,
                     indices,
                 );
@@ -194,6 +195,7 @@ pub fn abstract_subcatchments(
                 let subcatchment: Flowpath = flowpaths.abstract_subcatchment(
                     &subwta,
                     &taspec,
+                    &flovec,
                     &channels,
                     indices,
                 );

@@ -374,8 +374,12 @@ pub fn abstract_subfieldcatchments(
                 &fvslop,
                 &taspec,
             );
-            let subcatchment: Flowpath =
-                flowpaths.abstract_subfieldcatchment(&intersection_subwta, &taspec, indices);
+            let subcatchment: Flowpath = flowpaths.abstract_subfieldcatchment(
+                &intersection_subwta,
+                &taspec,
+                &flovec,
+                indices,
+            );
             (subcatchment, fake_topaz_id, flowpaths)
         })
         .collect();

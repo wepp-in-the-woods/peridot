@@ -30,6 +30,8 @@ The working directory passed to any binary is mutated in place. The following st
       fvslop.tif  # or fvslop.vrt
       taspec.tif  # or taspec.vrt
       netw.tsv    # for `wbt_abstract_watershed`
+      floaccum.tif # optional; planned representative flowpath mode
+      discha.tif   # optional; planned representative flowpath mode
   ag_fields/      # for `sub_fields_abstraction`
     field_boundaries.tif
 ```
@@ -53,6 +55,56 @@ Running `sub_fields_abstraction` creates (or refreshes) `<run>/ag_fields/sub_fie
 - `fields.csv` and `field_flowpaths.csv` - tabular summaries with georeferenced metadata.
 
 Existing output directories are deleted before regeneration (`watershed/` for the watershed tools, `ag_fields/sub_fields/` for sub-fields).
+
+## wbt_abstract_watershed flow (high-level)
+
+Inputs (all on the same grid):
+
+- `dem/wbt/subwta.tif` - TOPAZ-style hillslope IDs (channels end in `4`).
+- `dem/wbt/relief.tif` - DEM.
+- `dem/wbt/flovec.tif` - D8 flow directions (remapped to TOPAZ encoding in-place).
+- `dem/wbt/fvslop.tif` - slope.
+- `dem/wbt/taspec.tif` - aspect.
+- `dem/wbt/netw.tsv` - channel connectivity table for the stream network.
+
+Program flow:
+
+- Set `cwd` to the run directory, delete `<run>/watershed/`, and create output folders.
+- Load rasters via a `.tif`/`.vrt` fallback helper, then remap `flovec` to TOPAZ D8 codes.
+- Build an index map from `subwta` (`topaz_id -> pixel indices`) for fast lookup.
+- Parse `netw.tsv`, then write a debug copy of the connectivity graph to `watershed/network.txt`.
+- `walk_channels` traces channel flowpaths and computes widths (optionally using Bieger 2015 regressions).
+- `abstract_subcatchments` loops over each hillslope ID and:
+  - `walk_flowpaths` traces a flowpath from every pixel in the hillslope by walking downstream in `flovec` until the flow leaves the hillslope, hits `flow_dir = 0`, or loops.
+  - `FlowpathCollection::abstract_subcatchment` aggregates those flowpaths into a single representative hillslope profile using weighted slope averaging.
+- Output writers run in parallel to emit slope files, CSVs, GeoJSON, and (optionally) flowpath bundles.
+
+Data outputs:
+
+- `slope_files/channels.slp` + `channels.csv` from channel flowpaths.
+- `slope_files/hillslopes/*.slp` + `hillslopes.csv` from hillslope abstractions.
+- Optional `flowpaths.csv` + `slope_files/flowpaths/fps_<topaz_id>.slps` with per-pixel subflowpaths.
+- `channels.geojson` and `network.txt` for diagnostics.
+
+## Representative flowpath mode (planned)
+
+Goal: replace the per-pixel `walk_flowpaths` step with a single, deterministic flowpath per hillslope chosen using distance-to-channel (and optionally flow-accumulation) rasters.
+
+Inputs:
+
+- `dem/wbt/floaccum.tif` - flow accumulation (WBT output) aligned to `subwta`.
+- `dem/wbt/discha.tif` - distance-to-channel (WBT output) aligned to `subwta`.
+
+High-level approach:
+
+- For each hillslope (`topaz_id % 10 != 4`), select one seed cell using `discha` to mimic the current edge-flowpath sampling strategy:
+  - Enumerate source cells (no upstream neighbor inside the hillslope mask based on D8 `flovec`).
+  - Rank source cells by `discha` and choose the median; break ties deterministically (for example, higher `relief`, then row-major index).
+- Trace one flowpath from that seed cell using the existing `walk_flowpath` downstream logic.
+- Build the hillslope profile from that single path (or keep the existing length/width logic but swap in the representative path's slope sequence).
+- Emit the same outputs as today, but always skip `flowpaths.csv` and `slope_files/flowpaths` in representative mode (equivalent to forcing `--skip-flowpaths`).
+
+Design note: using the median source-cell `discha` value keeps representative lengths closer to the current algorithm that averages source-cell flowpaths. A max-`discha` seed would bias lengths longer, shorten inferred widths (area / length), and could push erosion rates higher.
 
 ## Building
 
