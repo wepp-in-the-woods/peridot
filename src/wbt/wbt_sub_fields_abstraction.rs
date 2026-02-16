@@ -51,8 +51,16 @@ fn log_flowpath_collection_stats(label: &str, collection: &FlowpathCollection) {
         let mut subflow_points = 0usize;
         for sub in subflows.values() {
             subflow_paths += sub.flowpaths.len();
-            subflow_indices += sub.flowpaths.iter().map(|fp| fp.indices.len()).sum::<usize>();
-            subflow_points += sub.flowpaths.iter().map(|fp| fp.distances_norm.len()).sum::<usize>();
+            subflow_indices += sub
+                .flowpaths
+                .iter()
+                .map(|fp| fp.indices.len())
+                .sum::<usize>();
+            subflow_points += sub
+                .flowpaths
+                .iter()
+                .map(|fp| fp.distances_norm.len())
+                .sum::<usize>();
         }
         let subflow_bytes =
             (subflow_indices * size_of::<usize>()) + (subflow_points * size_of::<f64>() * 5);
@@ -212,7 +220,8 @@ pub fn wbt_sub_fields_abstraction(
     // remove small sub-fields based on area threshold
     let cellsize2 = subwta.cellsize * subwta.cellsize;
     let min_area_px = (sub_field_min_area_threshold_m2 / cellsize2).ceil() as i32;
-    let valid_fake_ids: HashSet<i32> = fake_topaz_areas_px.iter()
+    let valid_fake_ids: HashSet<i32> = fake_topaz_areas_px
+        .iter()
         .filter(|(_k, &v)| v >= min_area_px)
         .map(|(&k, _v)| k)
         .collect();
@@ -247,11 +256,7 @@ pub fn wbt_sub_fields_abstraction(
         &fvslop,
         &taspec,
     ));
-    let subflow_count = hillslopes
-        .subflows
-        .as_ref()
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let subflow_count = hillslopes.subflows.as_ref().map(|m| m.len()).unwrap_or(0);
     info!(
         "abstracted sub-fields: hillslopes={} subflows={} in {:.2}s",
         hillslopes.flowpaths.len(),
@@ -315,7 +320,8 @@ pub fn wbt_sub_fields_abstraction(
             let out_dir = format!("{}/slope_files/flowpaths/", output_dir);
             Box::new(move || {
                 info!("writing flowpath slps to {}", out_dir);
-                let result = hillslopes.write_field_subflow_slps(&out_dir, max_points, lookup.as_ref());
+                let result =
+                    hillslopes.write_field_subflow_slps(&out_dir, max_points, lookup.as_ref());
                 info!("wrote flowpath slps to {}", out_dir);
                 result
             })

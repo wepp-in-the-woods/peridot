@@ -3,11 +3,11 @@ use std::io::Write;
 
 use interp::interp;
 
-use geojson::{Feature, Geometry};
 use geojson::Value::LineString;
+use geojson::{Feature, Geometry};
 
-use crate::support::{douglas_peucker, interpolate_slp};
 use crate::raster::Raster;
+use crate::support::{douglas_peucker, interpolate_slp};
 
 #[derive(Debug, Clone)]
 pub struct Flowpath {
@@ -63,7 +63,6 @@ impl Default for Flowpath {
 }
 
 impl Flowpath {
-
     #[allow(dead_code)]
     pub fn new(
         indices: Vec<usize>,
@@ -83,7 +82,7 @@ impl Flowpath {
         cellsize: f64,
         elevation: f64,
         order: i32,
-        areaup: f64
+        areaup: f64,
     ) -> Self {
         let mut slopes_r = slopes.clone();
         slopes_r.reverse();
@@ -115,7 +114,7 @@ impl Flowpath {
             kp,
             elevation,
             order,
-            areaup
+            areaup,
         }
     }
 
@@ -138,12 +137,14 @@ impl Flowpath {
         }
 
         self.slopes_r[min_index]
-        
     }
 
     #[allow(dead_code)]
     pub fn distances(&self) -> Vec<f64> {
-        self.distances_norm.iter().map(|&d| d * self.length).collect()
+        self.distances_norm
+            .iter()
+            .map(|&d| d * self.length)
+            .collect()
     }
 
     #[allow(dead_code)]
@@ -152,13 +153,13 @@ impl Flowpath {
     }
 
     #[allow(dead_code)]
-    pub fn write_slp(&self,
+    pub fn write_slp(
+        &self,
         path: &str,
         max_points: usize,
         clip_hillslopes: bool,
-        clip_hillslope_length: f64
+        clip_hillslope_length: f64,
     ) -> std::io::Result<()> {
-        
         // Open a file in write mode
         let file = File::create(path)?;
 
@@ -168,13 +169,13 @@ impl Flowpath {
     }
 
     #[allow(dead_code)]
-    pub fn _write_slp(&self,
+    pub fn _write_slp(
+        &self,
         mut file: &File,
         max_points: usize,
         clip_hillslopes: bool,
-        clip_hillslope_length: f64
+        clip_hillslope_length: f64,
     ) -> std::io::Result<()> {
-
         let simplified: (Vec<f64>, Vec<f64>);
         let (d0, s0) = if self.distances_norm.len() > 3 {
             simplified = douglas_peucker(&self.distances_norm, &self.slopes, 0.01).unwrap();
@@ -195,7 +196,8 @@ impl Flowpath {
         let npts: usize = d.len();
 
         // Build the defs string
-        let defs: Vec<String> = d.iter()
+        let defs: Vec<String> = d
+            .iter()
             .zip(s.iter())
             .map(|(&dist, &slope)| format!("{:.4}, {:.4}", dist, slope))
             .collect();
@@ -212,11 +214,17 @@ impl Flowpath {
 
         let slp = format!(
             "2023.3\n{}\n{:.4} {:.1} {:.1}\n{} {:.1}\n{} ",
-            nofes, self.aspect, width, self.elevation, npts, length, defs.join(" ")
+            nofes,
+            self.aspect,
+            width,
+            self.elevation,
+            npts,
+            length,
+            defs.join(" ")
         );
-        
+
         file.write_all(slp.as_bytes())?;
-    
+
         Ok(())
     }
 
@@ -225,10 +233,10 @@ impl Flowpath {
         let coords = raster.coordinates_of(&self.indices);
         let line_string = Geometry::new(LineString(coords));
         let mut properties: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-        properties.insert(String::from("topaz_id"),
-        serde_json::Value::Number(
-            serde_json::Number::from(
-                self.topaz_id as i64)));
+        properties.insert(
+            String::from("topaz_id"),
+            serde_json::Value::Number(serde_json::Number::from(self.topaz_id as i64)),
+        );
 
         if let Some(number) = serde_json::Number::from_f64(self.width) {
             properties.insert(String::from("width"), serde_json::Value::Number(number));
@@ -247,7 +255,10 @@ impl Flowpath {
         }
 
         if let Some(number) = serde_json::Number::from_f64(self.slope_scalar) {
-            properties.insert(String::from("slope_scalar"), serde_json::Value::Number(number));
+            properties.insert(
+                String::from("slope_scalar"),
+                serde_json::Value::Number(number),
+            );
         }
 
         if let Some(number) = serde_json::Number::from_f64(self.cellsize) {

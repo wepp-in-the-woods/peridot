@@ -73,7 +73,8 @@ fn main() -> Result<(), GdalError> {
         opts.clip_hillslopes,
         opts.clip_hillslope_length,
         opts.bieger2015_widths,
-        !opts.skip_flowpaths);
+        !opts.skip_flowpaths,
+    );
 
     Ok(())
 }

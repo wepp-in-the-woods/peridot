@@ -8,19 +8,18 @@ use rayon::prelude::*;
 use serde_json::to_string_pretty;
 
 use crate::douglas_peucker::douglas_peucker;
+use crate::flowpath::Flowpath;
 use crate::raster::{px_to_wgs, Raster};
 use crate::support::interpolate_slp;
-use crate::flowpath::Flowpath;
 use crate::watershed_abstraction::PATHS;
 
 #[derive(Debug, Clone)]
 pub struct FlowpathCollection {
     pub flowpaths: Vec<Flowpath>,
-    pub subflows: Option<HashMap<i32, FlowpathCollection>>
+    pub subflows: Option<HashMap<i32, FlowpathCollection>>,
 }
 
 impl FlowpathCollection {
-
     #[allow(dead_code)]
     pub fn get_fp_by_topaz_id(&self, topaz_id: i32) -> Option<&Flowpath> {
         self.flowpaths.iter().find(|fp| fp.topaz_id == topaz_id)
@@ -64,7 +63,6 @@ impl FlowpathCollection {
     /// eq. 3.4 in Thomas Cochrane's Dissertation
     #[allow(dead_code)]
     pub fn garbrecht_length(&self) -> f64 {
-
         let mut sum_xa: f64 = 0.0;
         let mut sum_a: f64 = 0.0;
         let mut n: f64 = 0.0;
@@ -83,8 +81,7 @@ impl FlowpathCollection {
 
     ///calculates weighted slopes based on the flowpaths contained on the hillslope
     #[allow(dead_code)]
-    pub fn weighted_slope_average_from_fps(&self) -> (Vec<f64>, Vec<f64>, Vec<f64>)  {
-
+    pub fn weighted_slope_average_from_fps(&self) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
         let longest_fp: &Flowpath = self.get_longest_fp();
         let mut num_points: usize = longest_fp.distances_norm.len();
         let longest_length: f64 = longest_fp.length;
@@ -116,11 +113,11 @@ impl FlowpathCollection {
 
         // we will weight the slope at each distance away from the channel
         for d_p in &distance_p {
-            let mut num: f64 = 0.0;   // to hold numerator value
+            let mut num: f64 = 0.0; // to hold numerator value
             let mut kpsum: f64 = 0.0; // to hold k_p sum
 
             for fp in &self.flowpaths {
-                if d_p > &(fp.length + 1e-6)  {
+                if d_p > &(fp.length + 1e-6) {
                     continue;
                 }
 
@@ -135,9 +132,14 @@ impl FlowpathCollection {
                 kpsum += fp.kp;
             }
 
-            assert!(kpsum > 0.0, "kpsum is 0.0, d_p: {}, num_points: {}, longest_length: {}", d_p, num_points, longest_length);
+            assert!(
+                kpsum > 0.0,
+                "kpsum is 0.0, d_p: {}, num_points: {}, longest_length: {}",
+                d_p,
+                num_points,
+                longest_length
+            );
             let weighted_slp: f64 = num / kpsum;
-
 
             // store the weighted slope estimate
             eps.push(weighted_slp);
@@ -153,13 +155,14 @@ impl FlowpathCollection {
     }
 
     #[allow(dead_code)]
-    pub fn abstract_subcatchment(&self,
+    pub fn abstract_subcatchment(
+        &self,
         subwta: &Raster<i32>,
         taspec: &Raster<f32>,
         flovec: &Raster<u8>,
         channels: &FlowpathCollection,
-        indices: &Vec<usize>) -> Flowpath {
-
+        indices: &Vec<usize>,
+    ) -> Flowpath {
         let cellsize: f64 = subwta.cellsize;
         let cellsize2: f64 = cellsize * cellsize;
         let topaz_id: i32 = self.flowpaths[0].topaz_id;
@@ -211,7 +214,7 @@ impl FlowpathCollection {
         // for each point
         let mut elevs: Vec<f64> = vec![longest_fp.elevation];
         for i in 0..distances.len() - 1 {
-            let dx: f64 = distances[i+1] - distances[i];
+            let dx: f64 = distances[i + 1] - distances[i];
             let dy: f64 = w_slopes[i];
             let elevation: f64 = elevs[i] - (dx * dy);
             elevs.push(elevation);
@@ -239,19 +242,18 @@ impl FlowpathCollection {
             cellsize,
             elevation,
             -1,
-            -1.0
+            -1.0,
         )
     }
 
     #[allow(dead_code)]
-    pub fn abstract_subfieldcatchment(&self,
+    pub fn abstract_subfieldcatchment(
+        &self,
         intersection_subwta: &Raster<i32>,
         taspec: &Raster<f32>,
         flovec: &Raster<u8>,
-        indices: &Vec<usize>
+        indices: &Vec<usize>,
     ) -> Flowpath {
-
-
         let cellsize: f64 = intersection_subwta.cellsize;
         let cellsize2: f64 = cellsize * cellsize;
         let fake_topaz_id: i32 = self.flowpaths[0].topaz_id;
@@ -261,13 +263,13 @@ impl FlowpathCollection {
 
         let length: f64;
         let width: f64;
-        
+
         // find length by finding each pixels and then taking the median length of the flowpaths originating from those edge pixels.
         let edge_flowpaths = self.get_edge_flowpaths2(intersection_subwta, flovec);
         length = flowpaths_median_length(&edge_flowpaths).unwrap_or(0.0);
         width = area / length;
 
-        let direction : f64 = longest_fp.direction;
+        let direction: f64 = longest_fp.direction;
 
         // determine aspect
         let aspect: f64 = taspec.determine_aspect(indices);
@@ -285,7 +287,7 @@ impl FlowpathCollection {
         // for each point
         let mut elevs: Vec<f64> = vec![longest_fp.elevation];
         for i in 0..distances.len() - 1 {
-            let dx: f64 = distances[i+1] - distances[i];
+            let dx: f64 = distances[i + 1] - distances[i];
             let dy: f64 = w_slopes[i];
             let elevation: f64 = elevs[i] - (dx * dy);
             elevs.push(elevation);
@@ -313,13 +315,15 @@ impl FlowpathCollection {
             cellsize,
             elevation,
             -1,
-            -1.0
+            -1.0,
         )
     }
 
     #[allow(dead_code)]
     pub fn to_geojson_feature_collection(&self, raster: &Raster<i32>) -> FeatureCollection {
-        let features: Vec<Feature> = self.flowpaths.iter()
+        let features: Vec<Feature> = self
+            .flowpaths
+            .iter()
             .map(|fp| fp.to_geojson_feature(raster))
             .collect();
 
@@ -335,23 +339,36 @@ impl FlowpathCollection {
         let feature_collection = self.to_geojson_feature_collection(raster);
 
         let mut geojson = serde_json::Map::new();
-        geojson.insert(String::from("type"),
-        serde_json::Value::String(String::from("FeatureCollection")));
+        geojson.insert(
+            String::from("type"),
+            serde_json::Value::String(String::from("FeatureCollection")),
+        );
 
         geojson.insert(
             String::from("features"),
             serde_json::Value::Array(
-                feature_collection.features.into_iter().map(|f| serde_json::to_value(f).unwrap()).collect()
-            )
+                feature_collection
+                    .features
+                    .into_iter()
+                    .map(|f| serde_json::to_value(f).unwrap())
+                    .collect(),
+            ),
         );
 
         // Optionally add CRS if it exists in the raster
         if let Some(proj) = &raster.proj4 {
             let mut crs = serde_json::Map::new();
-            crs.insert(String::from("type"), serde_json::Value::String(String::from("name")));
-            crs.insert(String::from("properties"), serde_json::Value::Object(serde_json::Map::from_iter(
-                std::iter::once((String::from("name"), serde_json::Value::String(proj.clone())))
-            )));
+            crs.insert(
+                String::from("type"),
+                serde_json::Value::String(String::from("name")),
+            );
+            crs.insert(
+                String::from("properties"),
+                serde_json::Value::Object(serde_json::Map::from_iter(std::iter::once((
+                    String::from("name"),
+                    serde_json::Value::String(proj.clone()),
+                )))),
+            );
             geojson.insert(String::from("crs"), serde_json::Value::Object(crs));
         }
 
@@ -374,10 +391,14 @@ impl FlowpathCollection {
     #[allow(dead_code)]
     pub fn write_subflow_slps(&self, out_dir: &str, max_points: usize) -> std::io::Result<()> {
         if let Some(subflows_map) = &self.subflows {
-            subflows_map.par_iter().for_each(|(topaz_id, subflowpath_collection)| {
-                let path = format!("{}/fps_{}.slps", out_dir, topaz_id);
-                subflowpath_collection.write_fp_slps(&path, max_points).unwrap();
-            });
+            subflows_map
+                .par_iter()
+                .for_each(|(topaz_id, subflowpath_collection)| {
+                    let path = format!("{}/fps_{}.slps", out_dir, topaz_id);
+                    subflowpath_collection
+                        .write_fp_slps(&path, max_points)
+                        .unwrap();
+                });
         }
 
         Ok(())
@@ -385,16 +406,18 @@ impl FlowpathCollection {
 
     #[allow(dead_code)]
     pub fn write_channel_slp(&self, path: &str, max_points: usize) -> std::io::Result<()> {
-
         let mut all_strings = Vec::new();
         all_strings.push(format!("2025.8\n{}\n", &self.flowpaths.len()));
 
         for fp in self.flowpaths.iter().rev() {
-
             let simplified: (Vec<f64>, Vec<f64>);
             let (d0, s0) = if fp.distances_norm.len() > 3 {
                 simplified = douglas_peucker(&fp.distances_norm, &fp.slopes, 0.01).unwrap();
-                println!("douglas_peuker {} -> {}", fp.distances_norm.len(), simplified.0.len());
+                println!(
+                    "douglas_peuker {} -> {}",
+                    fp.distances_norm.len(),
+                    simplified.0.len()
+                );
                 (&simplified.0, &simplified.1)
             } else {
                 (&fp.distances_norm, &fp.slopes)
@@ -411,14 +434,21 @@ impl FlowpathCollection {
             let npts: usize = d.len();
 
             // Build the defs string
-            let defs: Vec<String> = d.iter()
+            let defs: Vec<String> = d
+                .iter()
                 .zip(s.iter())
                 .map(|(&dist, &slope)| format!("{:.4}, {:.4}", dist, slope))
                 .collect();
 
             let slp = format!(
                 "{:.4} {:.1} {:.1} {}\n{} {:.1}\n{} \n",
-                fp.aspect, fp.width, fp.elevation, fp.order, npts, fp.length, defs.join(" ")
+                fp.aspect,
+                fp.width,
+                fp.elevation,
+                fp.order,
+                npts,
+                fp.length,
+                defs.join(" ")
             );
             all_strings.push(slp);
         }
@@ -432,10 +462,16 @@ impl FlowpathCollection {
     }
 
     #[allow(dead_code)]
-    pub fn write_slps(&self, out_dir: &str, max_points: usize, 
-        clip_hillslopes: bool, clip_hillslope_length: f64) -> std::io::Result<()> {
-
-        let results: Vec<std::io::Result<()>> = self.flowpaths.par_iter()
+    pub fn write_slps(
+        &self,
+        out_dir: &str,
+        max_points: usize,
+        clip_hillslopes: bool,
+        clip_hillslope_length: f64,
+    ) -> std::io::Result<()> {
+        let results: Vec<std::io::Result<()>> = self
+            .flowpaths
+            .par_iter()
             .map(|fp| {
                 let fname;
                 if fp.fp_id == -1 {
@@ -471,7 +507,8 @@ impl FlowpathCollection {
         fake_topaz_id_lookup: &HashMap<(i32, i32), i32>,
     ) -> std::io::Result<()> {
         for fp in &self.flowpaths {
-            if let Some((field_id, topaz_id)) = Self::resolve_field_lookup(fp.topaz_id, fake_topaz_id_lookup)
+            if let Some((field_id, topaz_id)) =
+                Self::resolve_field_lookup(fp.topaz_id, fake_topaz_id_lookup)
             {
                 let fname = if fp.fp_id == -1 {
                     format!("field_{}_{}.slp", field_id, topaz_id)
@@ -535,7 +572,11 @@ impl FlowpathCollection {
     }
 
     #[allow(dead_code)]
-    pub fn write_chn_metadata_to_csv(&self, path: &str, wgs_transform: &[f64; 4]) -> std::io::Result<()> {
+    pub fn write_chn_metadata_to_csv(
+        &self,
+        path: &str,
+        wgs_transform: &[f64; 4],
+    ) -> std::io::Result<()> {
         let file = File::create(path).unwrap();
         let mut writer = csv::Writer::from_writer(file);
 
@@ -583,7 +624,11 @@ impl FlowpathCollection {
     }
 
     #[allow(dead_code)]
-    pub fn write_metadata_to_csv(&self, path: &str, wgs_transform: &[f64; 4]) -> std::io::Result<()> {
+    pub fn write_metadata_to_csv(
+        &self,
+        path: &str,
+        wgs_transform: &[f64; 4],
+    ) -> std::io::Result<()> {
         let file = File::create(path).unwrap();
         let mut writer = csv::Writer::from_writer(file);
 
@@ -658,7 +703,8 @@ impl FlowpathCollection {
             .unwrap();
 
         for fp in &self.flowpaths {
-            if let Some((field_id, topaz_id)) = Self::resolve_field_lookup(fp.topaz_id, fake_topaz_id_lookup)
+            if let Some((field_id, topaz_id)) =
+                Self::resolve_field_lookup(fp.topaz_id, fake_topaz_id_lookup)
             {
                 let (lon, lat) = px_to_wgs(wgs_transform, fp.centroid_px.0, fp.centroid_px.1);
 
@@ -687,7 +733,11 @@ impl FlowpathCollection {
     }
 
     #[allow(dead_code)]
-    pub fn write_subflows_metadata_to_csv(&self, path: &str, wgs_transform: &[f64; 4]) -> std::io::Result<()> {
+    pub fn write_subflows_metadata_to_csv(
+        &self,
+        path: &str,
+        wgs_transform: &[f64; 4],
+    ) -> std::io::Result<()> {
         let file = File::create(path).unwrap();
         let mut writer = csv::Writer::from_writer(file);
 
@@ -816,7 +866,9 @@ impl FlowpathCollection {
     }
 
     // Method to find edge flowpaths
-    #[deprecated(note = "Use get_edge_flowpaths2 with subwta+flovec for faster, source-cell detection.")]
+    #[deprecated(
+        note = "Use get_edge_flowpaths2 with subwta+flovec for faster, source-cell detection."
+    )]
     pub fn get_edge_flowpaths(&self) -> Vec<Flowpath> {
         let mut edge_flowpaths = Vec::new();
 
@@ -831,7 +883,9 @@ impl FlowpathCollection {
 
             // Check against all other flowpaths
             for (j, other_flowpath) in self.flowpaths.iter().enumerate() {
-                if i == j { continue; } // Skip self-comparison
+                if i == j {
+                    continue;
+                } // Skip self-comparison
 
                 // If first_index is found in any other flowpath, it's not an edge
                 if other_flowpath.indices.contains(&first_index) {
@@ -850,11 +904,7 @@ impl FlowpathCollection {
     }
 
     #[allow(dead_code)]
-    pub fn get_edge_flowpaths2(
-        &self,
-        subwta: &Raster<i32>,
-        flovec: &Raster<u8>,
-    ) -> Vec<Flowpath> {
+    pub fn get_edge_flowpaths2(&self, subwta: &Raster<i32>, flovec: &Raster<u8>) -> Vec<Flowpath> {
         let mut mask_indices: HashSet<usize> = HashSet::new();
         for fp in &self.flowpaths {
             for &index in &fp.indices {
@@ -902,7 +952,6 @@ impl FlowpathCollection {
         edge_flowpaths
     }
 }
-
 
 // Method to calculate the median length of flowpaths
 fn flowpaths_median_length(flowpaths: &Vec<Flowpath>) -> Option<f64> {

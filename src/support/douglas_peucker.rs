@@ -5,13 +5,13 @@ fn point_line_distance(x0: f64, y0: f64, x1: f64, y1: f64, x2: f64, y2: f64) -> 
 }
 
 fn douglas_peucker_recursive(
-    distances: &[f64], 
-    slopes: &[f64], 
-    start: usize, 
-    end: usize, 
-    tolerance: f64, 
-    result_distances: &mut Vec<f64>, 
-    result_slopes: &mut Vec<f64>
+    distances: &[f64],
+    slopes: &[f64],
+    start: usize,
+    end: usize,
+    tolerance: f64,
+    result_distances: &mut Vec<f64>,
+    result_slopes: &mut Vec<f64>,
 ) {
     if start >= end {
         return;
@@ -22,9 +22,12 @@ fn douglas_peucker_recursive(
 
     for i in start + 1..end {
         let distance = point_line_distance(
-            distances[i], slopes[i],
-            distances[start], slopes[start],
-            distances[end], slopes[end]
+            distances[i],
+            slopes[i],
+            distances[start],
+            slopes[start],
+            distances[end],
+            slopes[end],
         );
         if distance > max_distance {
             max_distance = distance;
@@ -33,8 +36,24 @@ fn douglas_peucker_recursive(
     }
 
     if max_distance > tolerance {
-        douglas_peucker_recursive(distances, slopes, start, max_index, tolerance, result_distances, result_slopes);
-        douglas_peucker_recursive(distances, slopes, max_index, end, tolerance, result_distances, result_slopes);
+        douglas_peucker_recursive(
+            distances,
+            slopes,
+            start,
+            max_index,
+            tolerance,
+            result_distances,
+            result_slopes,
+        );
+        douglas_peucker_recursive(
+            distances,
+            slopes,
+            max_index,
+            end,
+            tolerance,
+            result_distances,
+            result_slopes,
+        );
     } else {
         result_distances.push(distances[start]);
         result_slopes.push(slopes[start]);
@@ -46,12 +65,20 @@ fn douglas_peucker_recursive(
 }
 
 pub fn douglas_peucker(
-    distances_norm: &[f64], 
-    slopes: &[f64], 
-    tolerance: f64
+    distances_norm: &[f64],
+    slopes: &[f64],
+    tolerance: f64,
 ) -> Result<(Vec<f64>, Vec<f64>), &'static str> {
     let mut result_distances = Vec::new();
     let mut result_slopes = Vec::new();
-    douglas_peucker_recursive(distances_norm, slopes, 0, distances_norm.len() - 1, tolerance, &mut result_distances, &mut result_slopes);
+    douglas_peucker_recursive(
+        distances_norm,
+        slopes,
+        0,
+        distances_norm.len() - 1,
+        tolerance,
+        &mut result_distances,
+        &mut result_slopes,
+    );
     Ok((result_distances, result_slopes))
 }

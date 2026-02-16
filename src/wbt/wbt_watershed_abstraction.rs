@@ -52,8 +52,16 @@ fn log_flowpath_collection_stats(label: &str, collection: &FlowpathCollection) {
         let mut subflow_points = 0usize;
         for sub in subflows.values() {
             subflow_paths += sub.flowpaths.len();
-            subflow_indices += sub.flowpaths.iter().map(|fp| fp.indices.len()).sum::<usize>();
-            subflow_points += sub.flowpaths.iter().map(|fp| fp.distances_norm.len()).sum::<usize>();
+            subflow_indices += sub
+                .flowpaths
+                .iter()
+                .map(|fp| fp.indices.len())
+                .sum::<usize>();
+            subflow_points += sub
+                .flowpaths
+                .iter()
+                .map(|fp| fp.distances_norm.len())
+                .sum::<usize>();
         }
         let subflow_bytes =
             (subflow_indices * size_of::<usize>()) + (subflow_points * size_of::<f64>() * 5);
@@ -256,11 +264,7 @@ pub fn wbt_abstract_watershed(
             write_flowpaths,
         )
     };
-    let subflow_count = hillslopes
-        .subflows
-        .as_ref()
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let subflow_count = hillslopes.subflows.as_ref().map(|m| m.len()).unwrap_or(0);
     info!(
         "abstracted subcatchments: hillslopes={} subflows={} in {:.2}s",
         hillslopes.flowpaths.len(),
@@ -272,25 +276,33 @@ pub fn wbt_abstract_watershed(
     let mut tasks: Vec<Box<dyn FnOnce() -> Result<()> + Send>> = vec![
         Box::new(|| {
             info!("writing channels.slp");
-            let result = channels.write_channel_slp("watershed/slope_files/channels.slp", max_points);
+            let result =
+                channels.write_channel_slp("watershed/slope_files/channels.slp", max_points);
             info!("wrote channels.slp");
             result
         }),
         Box::new(|| {
             info!("writing channels.csv");
-            let result = channels.write_chn_metadata_to_csv("watershed/channels.csv", &subwta.wgs_transform);
+            let result =
+                channels.write_chn_metadata_to_csv("watershed/channels.csv", &subwta.wgs_transform);
             info!("wrote channels.csv");
             result
         }),
         Box::new(|| {
             info!("writing hillslope slps");
-            let result = hillslopes.write_slps("watershed/slope_files/hillslopes/", max_points, clip_hillslopes, clip_hillslope_length);
+            let result = hillslopes.write_slps(
+                "watershed/slope_files/hillslopes/",
+                max_points,
+                clip_hillslopes,
+                clip_hillslope_length,
+            );
             info!("wrote hillslope slps");
             result
         }),
         Box::new(|| {
             info!("writing hillslopes.csv");
-            let result = hillslopes.write_metadata_to_csv("watershed/hillslopes.csv", &subwta.wgs_transform);
+            let result =
+                hillslopes.write_metadata_to_csv("watershed/hillslopes.csv", &subwta.wgs_transform);
             info!("wrote hillslopes.csv");
             result
         }),
@@ -305,13 +317,15 @@ pub fn wbt_abstract_watershed(
     if write_flowpaths {
         tasks.push(Box::new(|| {
             info!("writing flowpaths.csv");
-            let result = hillslopes.write_subflows_metadata_to_csv("watershed/flowpaths.csv", &subwta.wgs_transform);
+            let result = hillslopes
+                .write_subflows_metadata_to_csv("watershed/flowpaths.csv", &subwta.wgs_transform);
             info!("wrote flowpaths.csv");
             result
         }));
         tasks.push(Box::new(|| {
             info!("writing flowpath slps");
-            let result = hillslopes.write_subflow_slps("watershed/slope_files/flowpaths/", max_points);
+            let result =
+                hillslopes.write_subflow_slps("watershed/slope_files/flowpaths/", max_points);
             info!("wrote flowpath slps");
             result
         }));
@@ -319,7 +333,10 @@ pub fn wbt_abstract_watershed(
 
     // Execute tasks in parallel
     info!("starting output tasks: {}", tasks.len());
-    tasks.into_par_iter().map(|f| f()).collect::<Result<Vec<_>>>()?;
+    tasks
+        .into_par_iter()
+        .map(|f| f())
+        .collect::<Result<Vec<_>>>()?;
     info!("completed output tasks");
 
     Ok(())
@@ -453,14 +470,7 @@ fn select_representative_flowpath(
         );
         let seed_index = *indices.first().expect("missing hillslope indices");
         return walk_flowpath(
-            topaz_id,
-            seed_index,
-            subwta,
-            relief,
-            flovec,
-            fvslop,
-            taspec,
-            -1,
+            topaz_id, seed_index, subwta, relief, flovec, fvslop, taspec, -1,
         );
     }
 
@@ -493,14 +503,7 @@ fn select_representative_flowpath(
     for candidate_index in order {
         let seed_index = candidates[candidate_index].index;
         let fp = walk_flowpath(
-            topaz_id,
-            seed_index,
-            subwta,
-            relief,
-            flovec,
-            fvslop,
-            taspec,
-            -1,
+            topaz_id, seed_index, subwta, relief, flovec, fvslop, taspec, -1,
         );
         if fallback_fp.is_none() {
             fallback_fp = Some(fp.clone());
@@ -552,7 +555,8 @@ fn build_representative_hillslope(
     let aspect: f64 = taspec.determine_aspect(indices);
     let centroid_px = subwta.centroid_of(indices);
     let elevation = representative_fp.elevs[0];
-    let elev_drop = representative_fp.elevs[0] - representative_fp.elevs[representative_fp.elevs.len() - 1];
+    let elev_drop =
+        representative_fp.elevs[0] - representative_fp.elevs[representative_fp.elevs.len() - 1];
     let slope_scalar = if length > 0.0 {
         elev_drop / length
     } else {
@@ -604,22 +608,9 @@ fn abstract_subcatchments_representative(
                 .get(&topaz_id)
                 .expect("missing indices for topaz_id");
             let representative_fp = select_representative_flowpath(
-                topaz_id,
-                indices,
-                subwta,
-                relief,
-                flovec,
-                fvslop,
-                taspec,
-                discha,
+                topaz_id, indices, subwta, relief, flovec, fvslop, taspec, discha,
             );
-            build_representative_hillslope(
-                &representative_fp,
-                subwta,
-                taspec,
-                channels,
-                indices,
-            )
+            build_representative_hillslope(&representative_fp, subwta, taspec, channels, indices)
         })
         .collect();
 
@@ -656,8 +647,7 @@ mod tests {
 
         let subwta = Raster::<i32>::read(fixture.join("subwta.tif").to_str().unwrap()).unwrap();
         let relief = Raster::<f32>::read(fixture.join("relief.tif").to_str().unwrap()).unwrap();
-        let mut flovec =
-            Raster::<u8>::read(fixture.join("flovec.tif").to_str().unwrap()).unwrap();
+        let mut flovec = Raster::<u8>::read(fixture.join("flovec.tif").to_str().unwrap()).unwrap();
         let fvslop = Raster::<f32>::read(fixture.join("fvslop.tif").to_str().unwrap()).unwrap();
         let taspec = Raster::<f32>::read(fixture.join("taspec.tif").to_str().unwrap()).unwrap();
         let discha = Raster::<f32>::read(fixture.join("discha.tif").to_str().unwrap()).unwrap();
@@ -671,13 +661,7 @@ mod tests {
             }
 
             let flowpaths = walk_flowpaths(
-                topaz_id,
-                &indices,
-                &subwta,
-                &relief,
-                &flovec,
-                &fvslop,
-                &taspec,
+                topaz_id, &indices, &subwta, &relief, &flovec, &fvslop, &taspec,
             );
             let edge_flowpaths = flowpaths.get_edge_flowpaths2(&subwta, &flovec);
             assert!(
@@ -692,14 +676,7 @@ mod tests {
                 .collect();
 
             let rep_fp = select_representative_flowpath(
-                topaz_id,
-                &indices,
-                &subwta,
-                &relief,
-                &flovec,
-                &fvslop,
-                &taspec,
-                &discha,
+                topaz_id, &indices, &subwta, &relief, &flovec, &fvslop, &taspec, &discha,
             );
             let rep_head = *rep_fp
                 .indices
@@ -711,12 +688,8 @@ mod tests {
                 topaz_id
             );
 
-            let mut edge_lengths: Vec<f64> =
-                edge_flowpaths.iter().map(|fp| fp.length).collect();
-            let min_len = edge_lengths
-                .iter()
-                .cloned()
-                .fold(f64::INFINITY, f64::min);
+            let mut edge_lengths: Vec<f64> = edge_flowpaths.iter().map(|fp| fp.length).collect();
+            let min_len = edge_lengths.iter().cloned().fold(f64::INFINITY, f64::min);
             let max_len = edge_lengths
                 .iter()
                 .cloned()

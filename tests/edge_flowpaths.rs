@@ -6,8 +6,7 @@ use peridot::raster::Raster;
 use peridot::watershed_abstraction::walk_flowpaths;
 
 fn fixture_wbt_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/wbt/amiss-polyhedron/dem/wbt")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/wbt/amiss-polyhedron/dem/wbt")
 }
 
 #[test]
@@ -29,13 +28,7 @@ fn edge_flowpaths_match_source_cell_detection() {
         }
 
         let flowpaths = walk_flowpaths(
-            topaz_id,
-            &indices,
-            &subwta,
-            &relief,
-            &flovec,
-            &fvslop,
-            &taspec,
+            topaz_id, &indices, &subwta, &relief, &flovec, &fvslop, &taspec,
         );
 
         #[allow(deprecated)]

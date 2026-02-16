@@ -44,7 +44,10 @@ struct Opts {
     sub_field_min_area_threshold_m2: f64,
 
     /// Path to the rasterised field boundaries relative to the run directory
-    #[clap(long = "field-raster", default_value = "ag_fields/field_boundaries.tif")]
+    #[clap(
+        long = "field-raster",
+        default_value = "ag_fields/field_boundaries.tif"
+    )]
     field_raster: String,
 
     /// Output directory for sub-field artifacts relative to the run directory

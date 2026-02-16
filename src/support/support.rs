@@ -1,10 +1,10 @@
-use std::f64::consts::PI;
 use interp::interp_slice;
+use std::f64::consts::PI;
 
 #[allow(dead_code)]
 pub fn compute_direction(head: (i32, i32), tail: (i32, i32)) -> f64 {
-    let a = (tail.1 as f64 - head.1 as f64).atan2(head.0 as f64 - tail.0 as f64) 
-           * (180.0 / PI) - 180.0;
+    let a =
+        (tail.1 as f64 - head.1 as f64).atan2(head.0 as f64 - tail.0 as f64) * (180.0 / PI) - 180.0;
 
     if a < 0.0 {
         return a + 360.0;
@@ -43,19 +43,26 @@ pub fn circmean(angles: &[f64]) -> f64 {
 
 #[allow(dead_code)]
 pub fn interpolate_slp(
-    distances: &Vec<f64>, 
-    slopes: &Vec<f64>, 
-    max_points: usize) -> Result<(Vec<f64>, Vec<f64>), &'static str> {
-
+    distances: &Vec<f64>,
+    slopes: &Vec<f64>,
+    max_points: usize,
+) -> Result<(Vec<f64>, Vec<f64>), &'static str> {
     // Check for the special case where slope is a single cell
-    if slopes.len() == 1{
+    if slopes.len() == 1 {
         return Ok((vec![0.0, 1.0], vec![slopes[0], slopes[0]]));
     }
 
     assert!(distances.len() == slopes.len());
-    assert!(max_points < distances.len(), "{} < {}", max_points, distances.len());
+    assert!(
+        max_points < distances.len(),
+        "{} < {}",
+        max_points,
+        distances.len()
+    );
 
-    let new_distances: Vec<f64> = (0..max_points).map(|i| i as f64 / (max_points - 1) as f64).collect();
+    let new_distances: Vec<f64> = (0..max_points)
+        .map(|i| i as f64 / (max_points - 1) as f64)
+        .collect();
     let new_slopes: Vec<f64> = interp_slice(distances, slopes, &new_distances);
 
     Ok((new_distances, new_slopes))
@@ -63,13 +70,14 @@ pub fn interpolate_slp(
 
 #[allow(dead_code)]
 pub fn argmax(data: &Vec<f64>) -> Option<usize> {
-    data.iter().enumerate().fold(None, |acc, (index, &value)| {
-        match acc {
+    data.iter()
+        .enumerate()
+        .fold(None, |acc, (index, &value)| match acc {
             None => Some((index, value)),
             Some((_, max_val)) if value > max_val => Some((index, value)),
-            _ => acc
-        }
-    }).map(|(index, _)| index)
+            _ => acc,
+        })
+        .map(|(index, _)| index)
 }
 
 #[cfg(test)]
@@ -77,7 +85,6 @@ mod tests {
     use super::*;
     use std::fs::File;
     use std::io::{self, BufRead, BufReader};
-
 
     #[test]
     fn test_argmax_basic() {
@@ -141,5 +148,4 @@ mod tests {
         let mut slopes = vec![0.2];
         let _ = interpolate_slp(&mut distances, &mut slopes, 10).unwrap();
     }
-
 }

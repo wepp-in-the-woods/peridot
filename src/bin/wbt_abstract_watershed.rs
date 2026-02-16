@@ -84,7 +84,8 @@ fn main() -> Result<(), GdalError> {
         opts.clip_hillslope_length,
         opts.bieger2015_widths,
         !skip_flowpaths,
-        opts.representative_flowpath);
+        opts.representative_flowpath,
+    );
 
     Ok(())
 }
