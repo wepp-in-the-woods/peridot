@@ -2,8 +2,13 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{Result, Write};
 use std::path::Path;
+use std::sync::Arc;
 
+use arrow_array::{ArrayRef, Float64Array, Int32Array, RecordBatch};
+use arrow_schema::{DataType, Field, Schema};
 use geojson::{Feature, FeatureCollection};
+use parquet::arrow::ArrowWriter;
+use parquet::file::properties::WriterProperties;
 use rayon::prelude::*;
 use serde_json::to_string_pretty;
 
@@ -17,6 +22,39 @@ use crate::watershed_abstraction::PATHS;
 pub struct FlowpathCollection {
     pub flowpaths: Vec<Flowpath>,
     pub subflows: Option<HashMap<i32, FlowpathCollection>>,
+}
+
+fn parquet_error(context: &str, err: impl std::fmt::Display) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::Other, format!("{}: {}", context, err))
+}
+
+fn write_record_batch_parquet(
+    path: &str,
+    schema: Schema,
+    columns: Vec<ArrayRef>,
+) -> std::io::Result<()> {
+    if let Some(parent) = Path::new(path).parent() {
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
+
+    let schema_ref = Arc::new(schema);
+    let batch = RecordBatch::try_new(schema_ref.clone(), columns)
+        .map_err(|err| parquet_error("failed to build record batch", err))?;
+
+    let file = File::create(path)?;
+    let props = WriterProperties::builder().build();
+    let mut writer = ArrowWriter::try_new(file, schema_ref, Some(props))
+        .map_err(|err| parquet_error("failed to create parquet writer", err))?;
+    writer
+        .write(&batch)
+        .map_err(|err| parquet_error("failed to write parquet batch", err))?;
+    writer
+        .close()
+        .map_err(|err| parquet_error("failed to close parquet writer", err))?;
+
+    Ok(())
 }
 
 pub(crate) fn zonal_median_slope(fvslop: &Raster<f32>, indices: &Vec<usize>) -> f64 {
@@ -603,6 +641,247 @@ impl FlowpathCollection {
         }
 
         Ok(())
+    }
+
+    #[allow(dead_code)]
+    pub fn subflow_row_count(&self) -> usize {
+        self.subflows
+            .as_ref()
+            .map(|subflows_map| {
+                subflows_map
+                    .values()
+                    .map(|collection| collection.flowpaths.len())
+                    .sum()
+            })
+            .unwrap_or(0)
+    }
+
+    #[allow(dead_code)]
+    pub fn write_chn_metadata_to_parquet(
+        &self,
+        path: &str,
+        wgs_transform: &[f64; 4],
+    ) -> std::io::Result<()> {
+        let mut topaz_ids: Vec<i32> = Vec::with_capacity(self.flowpaths.len());
+        let mut slope_scalars: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
+        let mut lengths: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
+        let mut widths: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
+        let mut directions: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
+        let mut orders: Vec<i32> = Vec::with_capacity(self.flowpaths.len());
+        let mut aspects: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
+        let mut areas: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
+        let mut elevations: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
+        let mut centroid_px: Vec<i32> = Vec::with_capacity(self.flowpaths.len());
+        let mut centroid_py: Vec<i32> = Vec::with_capacity(self.flowpaths.len());
+        let mut centroid_lon: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
+        let mut centroid_lat: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
+
+        for fp in &self.flowpaths {
+            let (lon, lat) = px_to_wgs(wgs_transform, fp.centroid_px.0, fp.centroid_px.1);
+            topaz_ids.push(fp.topaz_id);
+            slope_scalars.push(fp.slope_scalar);
+            lengths.push(fp.length);
+            widths.push(fp.width);
+            directions.push(fp.direction);
+            orders.push(fp.order);
+            aspects.push(fp.aspect);
+            areas.push(fp.area_m2());
+            elevations.push(fp.elevation);
+            centroid_px.push(fp.centroid_px.0);
+            centroid_py.push(fp.centroid_px.1);
+            centroid_lon.push(lon);
+            centroid_lat.push(lat);
+        }
+
+        let schema = Schema::new(vec![
+            Field::new("topaz_id", DataType::Int32, false),
+            Field::new("slope_scalar", DataType::Float64, false),
+            Field::new("length", DataType::Float64, false),
+            Field::new("width", DataType::Float64, false),
+            Field::new("direction", DataType::Float64, false),
+            Field::new("order", DataType::Int32, false),
+            Field::new("aspect", DataType::Float64, false),
+            Field::new("area", DataType::Float64, false),
+            Field::new("elevation", DataType::Float64, false),
+            Field::new("centroid_px", DataType::Int32, false),
+            Field::new("centroid_py", DataType::Int32, false),
+            Field::new("centroid_lon", DataType::Float64, false),
+            Field::new("centroid_lat", DataType::Float64, false),
+        ]);
+
+        write_record_batch_parquet(
+            path,
+            schema,
+            vec![
+                Arc::new(Int32Array::from(topaz_ids)) as ArrayRef,
+                Arc::new(Float64Array::from(slope_scalars)),
+                Arc::new(Float64Array::from(lengths)),
+                Arc::new(Float64Array::from(widths)),
+                Arc::new(Float64Array::from(directions)),
+                Arc::new(Int32Array::from(orders)),
+                Arc::new(Float64Array::from(aspects)),
+                Arc::new(Float64Array::from(areas)),
+                Arc::new(Float64Array::from(elevations)),
+                Arc::new(Int32Array::from(centroid_px)),
+                Arc::new(Int32Array::from(centroid_py)),
+                Arc::new(Float64Array::from(centroid_lon)),
+                Arc::new(Float64Array::from(centroid_lat)),
+            ],
+        )
+    }
+
+    #[allow(dead_code)]
+    pub fn write_metadata_to_parquet(
+        &self,
+        path: &str,
+        wgs_transform: &[f64; 4],
+    ) -> std::io::Result<()> {
+        let mut topaz_ids: Vec<i32> = Vec::with_capacity(self.flowpaths.len());
+        let mut slope_scalars: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
+        let mut lengths: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
+        let mut widths: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
+        let mut directions: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
+        let mut aspects: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
+        let mut areas: Vec<i32> = Vec::with_capacity(self.flowpaths.len());
+        let mut elevations: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
+        let mut centroid_px: Vec<i32> = Vec::with_capacity(self.flowpaths.len());
+        let mut centroid_py: Vec<i32> = Vec::with_capacity(self.flowpaths.len());
+        let mut centroid_lon: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
+        let mut centroid_lat: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
+
+        for fp in &self.flowpaths {
+            let (lon, lat) = px_to_wgs(wgs_transform, fp.centroid_px.0, fp.centroid_px.1);
+            topaz_ids.push(fp.topaz_id);
+            slope_scalars.push(fp.slope_scalar);
+            lengths.push(fp.length);
+            widths.push(fp.width);
+            directions.push(fp.direction);
+            aspects.push(fp.aspect);
+            areas.push(fp.area_m2() as i32);
+            elevations.push(fp.elevation);
+            centroid_px.push(fp.centroid_px.0);
+            centroid_py.push(fp.centroid_px.1);
+            centroid_lon.push(lon);
+            centroid_lat.push(lat);
+        }
+
+        let schema = Schema::new(vec![
+            Field::new("topaz_id", DataType::Int32, false),
+            Field::new("slope_scalar", DataType::Float64, false),
+            Field::new("length", DataType::Float64, false),
+            Field::new("width", DataType::Float64, false),
+            Field::new("direction", DataType::Float64, false),
+            Field::new("aspect", DataType::Float64, false),
+            Field::new("area", DataType::Int32, false),
+            Field::new("elevation", DataType::Float64, false),
+            Field::new("centroid_px", DataType::Int32, false),
+            Field::new("centroid_py", DataType::Int32, false),
+            Field::new("centroid_lon", DataType::Float64, false),
+            Field::new("centroid_lat", DataType::Float64, false),
+        ]);
+
+        write_record_batch_parquet(
+            path,
+            schema,
+            vec![
+                Arc::new(Int32Array::from(topaz_ids)) as ArrayRef,
+                Arc::new(Float64Array::from(slope_scalars)),
+                Arc::new(Float64Array::from(lengths)),
+                Arc::new(Float64Array::from(widths)),
+                Arc::new(Float64Array::from(directions)),
+                Arc::new(Float64Array::from(aspects)),
+                Arc::new(Int32Array::from(areas)),
+                Arc::new(Float64Array::from(elevations)),
+                Arc::new(Int32Array::from(centroid_px)),
+                Arc::new(Int32Array::from(centroid_py)),
+                Arc::new(Float64Array::from(centroid_lon)),
+                Arc::new(Float64Array::from(centroid_lat)),
+            ],
+        )
+    }
+
+    #[allow(dead_code)]
+    pub fn write_subflows_metadata_to_parquet(
+        &self,
+        path: &str,
+        wgs_transform: &[f64; 4],
+    ) -> std::io::Result<()> {
+        let mut topaz_ids: Vec<i32> = Vec::new();
+        let mut fp_ids: Vec<i32> = Vec::new();
+        let mut slope_scalars: Vec<f64> = Vec::new();
+        let mut lengths: Vec<f64> = Vec::new();
+        let mut widths: Vec<f64> = Vec::new();
+        let mut directions: Vec<f64> = Vec::new();
+        let mut aspects: Vec<f64> = Vec::new();
+        let mut areas: Vec<f64> = Vec::new();
+        let mut elevations: Vec<f64> = Vec::new();
+        let mut orders: Vec<i32> = Vec::new();
+        let mut centroid_px: Vec<i32> = Vec::new();
+        let mut centroid_py: Vec<i32> = Vec::new();
+        let mut centroid_lon: Vec<f64> = Vec::new();
+        let mut centroid_lat: Vec<f64> = Vec::new();
+
+        if let Some(subflows_map) = &self.subflows {
+            for (topaz_id, subflow_collection) in subflows_map {
+                for fp in &subflow_collection.flowpaths {
+                    let (lon, lat) = px_to_wgs(wgs_transform, fp.centroid_px.0, fp.centroid_px.1);
+                    topaz_ids.push(*topaz_id);
+                    fp_ids.push(fp.fp_id);
+                    slope_scalars.push(fp.slope_scalar);
+                    lengths.push(fp.length);
+                    widths.push(fp.width);
+                    directions.push(fp.direction);
+                    aspects.push(fp.aspect);
+                    areas.push(fp.area_m2());
+                    elevations.push(fp.elevation);
+                    orders.push(fp.order);
+                    centroid_px.push(fp.centroid_px.0);
+                    centroid_py.push(fp.centroid_px.1);
+                    centroid_lon.push(lon);
+                    centroid_lat.push(lat);
+                }
+            }
+        } else {
+            panic!("Unexpected None in subflows!");
+        }
+
+        let schema = Schema::new(vec![
+            Field::new("topaz_id", DataType::Int32, false),
+            Field::new("fp_id", DataType::Int32, false),
+            Field::new("slope_scalar", DataType::Float64, false),
+            Field::new("length", DataType::Float64, false),
+            Field::new("width", DataType::Float64, false),
+            Field::new("direction", DataType::Float64, false),
+            Field::new("aspect", DataType::Float64, false),
+            Field::new("area", DataType::Float64, false),
+            Field::new("elevation", DataType::Float64, false),
+            Field::new("order", DataType::Int32, false),
+            Field::new("centroid_px", DataType::Int32, false),
+            Field::new("centroid_py", DataType::Int32, false),
+            Field::new("centroid_lon", DataType::Float64, false),
+            Field::new("centroid_lat", DataType::Float64, false),
+        ]);
+
+        write_record_batch_parquet(
+            path,
+            schema,
+            vec![
+                Arc::new(Int32Array::from(topaz_ids)) as ArrayRef,
+                Arc::new(Int32Array::from(fp_ids)),
+                Arc::new(Float64Array::from(slope_scalars)),
+                Arc::new(Float64Array::from(lengths)),
+                Arc::new(Float64Array::from(widths)),
+                Arc::new(Float64Array::from(directions)),
+                Arc::new(Float64Array::from(aspects)),
+                Arc::new(Float64Array::from(areas)),
+                Arc::new(Float64Array::from(elevations)),
+                Arc::new(Int32Array::from(orders)),
+                Arc::new(Int32Array::from(centroid_px)),
+                Arc::new(Int32Array::from(centroid_py)),
+                Arc::new(Float64Array::from(centroid_lon)),
+                Arc::new(Float64Array::from(centroid_lat)),
+            ],
+        )
     }
 
     #[allow(dead_code)]

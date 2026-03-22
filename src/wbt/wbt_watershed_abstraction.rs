@@ -14,6 +14,10 @@ use crate::flowpath::Flowpath;
 use crate::flowpath_collection::{zonal_median_slope, FlowpathCollection};
 use crate::netw::write_network;
 use crate::raster::Raster;
+use crate::watershed_abstraction::watershed_manifest::{
+    channels_summary, flowpaths_summary, hillslopes_summary, write_watershed_readme,
+    ManifestRunFlags, TabularOutputSummary,
+};
 use crate::watershed_abstraction::{abstract_subcatchments, walk_channels, walk_flowpath, PATHS};
 use crate::wbt_netw::read_wbt_netw_tab;
 
@@ -289,6 +293,13 @@ pub fn wbt_abstract_watershed(
             result
         }),
         Box::new(|| {
+            info!("writing channels.parquet");
+            let result = channels
+                .write_chn_metadata_to_parquet("watershed/channels.parquet", &subwta.wgs_transform);
+            info!("wrote channels.parquet");
+            result
+        }),
+        Box::new(|| {
             info!("writing hillslope slps");
             let result = hillslopes.write_slps(
                 "watershed/slope_files/hillslopes/",
@@ -304,6 +315,13 @@ pub fn wbt_abstract_watershed(
             let result =
                 hillslopes.write_metadata_to_csv("watershed/hillslopes.csv", &subwta.wgs_transform);
             info!("wrote hillslopes.csv");
+            result
+        }),
+        Box::new(|| {
+            info!("writing hillslopes.parquet");
+            let result = hillslopes
+                .write_metadata_to_parquet("watershed/hillslopes.parquet", &subwta.wgs_transform);
+            info!("wrote hillslopes.parquet");
             result
         }),
         Box::new(|| {
@@ -338,6 +356,38 @@ pub fn wbt_abstract_watershed(
         .map(|f| f())
         .collect::<Result<Vec<_>>>()?;
     info!("completed output tasks");
+
+    if write_flowpaths {
+        info!("writing flowpaths.parquet");
+        hillslopes.write_subflows_metadata_to_parquet(
+            "watershed/flowpaths.parquet",
+            &subwta.wgs_transform,
+        )?;
+        info!("wrote flowpaths.parquet");
+    }
+
+    let mut tabular_outputs: Vec<TabularOutputSummary> = vec![
+        channels_summary(channels.flowpaths.len(), "parquet"),
+        channels_summary(channels.flowpaths.len(), "csv"),
+        hillslopes_summary(hillslopes.flowpaths.len(), "parquet"),
+        hillslopes_summary(hillslopes.flowpaths.len(), "csv"),
+    ];
+    if write_flowpaths {
+        let flowpath_rows = hillslopes.subflow_row_count();
+        tabular_outputs.push(flowpaths_summary(flowpath_rows, "parquet"));
+        tabular_outputs.push(flowpaths_summary(flowpath_rows, "csv"));
+    }
+
+    let run_flags = ManifestRunFlags {
+        command: "wbt_abstract_watershed",
+        max_points,
+        clip_hillslopes,
+        clip_hillslope_length,
+        bieger2015_widths,
+        skip_flowpaths: !write_flowpaths,
+        representative_flowpath,
+    };
+    write_watershed_readme(Path::new("watershed"), &run_flags, &tabular_outputs)?;
 
     Ok(())
 }

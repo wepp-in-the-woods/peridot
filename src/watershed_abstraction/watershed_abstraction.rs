@@ -12,6 +12,10 @@ use crate::flowpath_collection::FlowpathCollection;
 use crate::netw::{read_netw_tab, write_network, ChannelNode};
 use crate::raster::Raster;
 use crate::support::{circmean, compute_direction};
+use crate::watershed_abstraction::watershed_manifest::{
+    channels_summary, flowpaths_summary, hillslopes_summary, write_watershed_readme,
+    ManifestRunFlags, TabularOutputSummary,
+};
 use crate::wbt_netw::Link;
 
 pub trait LinkAttributes {
@@ -135,6 +139,10 @@ pub fn abstract_watershed(
             channels.write_chn_metadata_to_csv("watershed/channels.csv", &subwta.wgs_transform)
         }),
         Box::new(|| {
+            channels
+                .write_chn_metadata_to_parquet("watershed/channels.parquet", &subwta.wgs_transform)
+        }),
+        Box::new(|| {
             hillslopes.write_slps(
                 "watershed/slope_files/hillslopes/",
                 max_points,
@@ -144,6 +152,10 @@ pub fn abstract_watershed(
         }),
         Box::new(|| {
             hillslopes.write_metadata_to_csv("watershed/hillslopes.csv", &subwta.wgs_transform)
+        }),
+        Box::new(|| {
+            hillslopes
+                .write_metadata_to_parquet("watershed/hillslopes.parquet", &subwta.wgs_transform)
         }),
         Box::new(|| channels.write_geojson(&subwta, "watershed/channels.geojson")),
     ];
@@ -163,6 +175,38 @@ pub fn abstract_watershed(
         .into_par_iter()
         .map(|f| f())
         .collect::<Result<Vec<_>>>()?;
+
+    // Flowpaths parquet export is memory-heavy; run it after the parallel pool to
+    // reduce peak memory contention with other writers.
+    if write_flowpaths {
+        hillslopes.write_subflows_metadata_to_parquet(
+            "watershed/flowpaths.parquet",
+            &subwta.wgs_transform,
+        )?;
+    }
+
+    let mut tabular_outputs: Vec<TabularOutputSummary> = vec![
+        channels_summary(channels.flowpaths.len(), "parquet"),
+        channels_summary(channels.flowpaths.len(), "csv"),
+        hillslopes_summary(hillslopes.flowpaths.len(), "parquet"),
+        hillslopes_summary(hillslopes.flowpaths.len(), "csv"),
+    ];
+    if write_flowpaths {
+        let flowpath_rows = hillslopes.subflow_row_count();
+        tabular_outputs.push(flowpaths_summary(flowpath_rows, "parquet"));
+        tabular_outputs.push(flowpaths_summary(flowpath_rows, "csv"));
+    }
+
+    let run_flags = ManifestRunFlags {
+        command: "abstract_watershed",
+        max_points,
+        clip_hillslopes,
+        clip_hillslope_length,
+        bieger2015_widths,
+        skip_flowpaths: !write_flowpaths,
+        representative_flowpath: false,
+    };
+    write_watershed_readme(Path::new("watershed"), &run_flags, &tabular_outputs)?;
 
     Ok(())
 }

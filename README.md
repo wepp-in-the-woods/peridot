@@ -44,7 +44,9 @@ Running `abstract_watershed` or `wbt_abstract_watershed` creates (or refreshes) 
 
 - `slope_files/channels.slp` and `slope_files/hillslopes/*.slp` - WEPP channel and hillslope profiles truncated to the requested `max_points`.
 - `slope_files/flowpaths/fps_<topaz_id>.slps` - sub-flowpath profiles (omit with `--skip-flowpaths`).
-- `channels.csv`, `hillslopes.csv`, `flowpaths.csv` - tabular summaries with georeferenced metadata.
+- `channels.parquet`, `hillslopes.parquet`, `flowpaths.parquet` - primary tabular summaries with georeferenced metadata.
+- `channels.csv`, `hillslopes.csv`, `flowpaths.csv` - compatibility tabular outputs (same schema family as parquet).
+- `README.md` - generated manifest describing executed flags, produced files, and tabular schemas.
 - `channels.geojson` and `network.txt` - lightweight diagnostics for visual inspection.
 
 Running `sub_fields_abstraction` creates (or refreshes) `<run>/ag_fields/sub_fields/` with the following artefacts:
@@ -77,14 +79,15 @@ Program flow:
 - `abstract_subcatchments` loops over each hillslope ID and:
   - `walk_flowpaths` traces a flowpath from every pixel in the hillslope by walking downstream in `flovec` until the flow leaves the hillslope, hits `flow_dir = 0`, or loops.
   - `FlowpathCollection::abstract_subcatchment` aggregates those flowpaths into a single representative hillslope profile using weighted slope averaging.
-- Output writers run in parallel to emit slope files, CSVs, GeoJSON, and (optionally) flowpath bundles.
+- Output writers run in parallel to emit slope files, parquet/CSV tabular outputs, GeoJSON, and (optionally) flowpath bundles.
 
 Data outputs:
 
-- `slope_files/channels.slp` + `channels.csv` from channel flowpaths.
-- `slope_files/hillslopes/*.slp` + `hillslopes.csv` from hillslope abstractions.
-- Optional `flowpaths.csv` + `slope_files/flowpaths/fps_<topaz_id>.slps` with per-pixel subflowpaths.
+- `slope_files/channels.slp` + `channels.parquet` (`channels.csv` compatibility output).
+- `slope_files/hillslopes/*.slp` + `hillslopes.parquet` (`hillslopes.csv` compatibility output).
+- Optional `flowpaths.parquet` (`flowpaths.csv` compatibility output) + `slope_files/flowpaths/fps_<topaz_id>.slps` with per-pixel subflowpaths.
 - `channels.geojson` and `network.txt` for diagnostics.
+- `README.md` manifest with run flags, file listing (format/size/rows), and schema summaries.
 
 ## Representative flowpath mode (WBT only)
 
@@ -102,7 +105,7 @@ High-level approach:
   - Rank source cells by `discha` and choose the median; break ties deterministically (for example, higher `relief`, then row-major index).
 - Trace one flowpath from that seed cell using the existing `walk_flowpath` downstream logic.
 - Build the hillslope profile from that single path (or keep the existing length/width logic but swap in the representative path's slope sequence).
-- Emit the same outputs as today, but always skip `flowpaths.csv` and `slope_files/flowpaths` in representative mode (equivalent to forcing `--skip-flowpaths`).
+- Emit the same outputs as today, but always skip flowpath tabular/slope outputs in representative mode (equivalent to forcing `--skip-flowpaths`).
 
 Design note: using the median source-cell `discha` value keeps representative lengths closer to the current algorithm that averages source-cell flowpaths. A max-`discha` seed would bias lengths longer, shorten inferred widths (area / length), and could push erosion rates higher.
 
@@ -150,7 +153,7 @@ Key options:
 - `--max-points` caps profile polyline length (WEPP defaults to 99).
 - `--clip-hillslopes` and `--clip-hillslope-length` clip hillslope profiles to a maximum physical length.
 - `--bieger2015-widths` uses the Bieger (2015) regressions to infer channel widths from drainage area.
-- `--skip-flowpaths` (abstract_watershed, wbt_abstract_watershed) omits `flowpaths.csv` and `slope_files/flowpaths`.
+- `--skip-flowpaths` (abstract_watershed, wbt_abstract_watershed) omits `flowpaths.parquet`, `flowpaths.csv`, and `slope_files/flowpaths`.
 - `--representative-flowpath` (wbt_abstract_watershed) uses a single seed per hillslope from `discha.tif` and forces `--skip-flowpaths`.
 - `--sub-field-min-area-threshold-m2` (sub_fields_abstraction) drops field/subcatchment intersections smaller than the specified area.
 - `--field-raster` and `--output-dir` let you override the default AgFields raster location and output directory when running the sub-field tool.

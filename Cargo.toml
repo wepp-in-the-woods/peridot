@@ -33,6 +33,9 @@ proj = "0.27.2"
 clap = { version = "4.4.5", features = ["derive", "cargo"] }
 csv = "1.2.2"
 log = "0.4.20"
+parquet = "53"
+arrow-array = "53"
+arrow-schema = "53"
 
 [build-dependencies]
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
