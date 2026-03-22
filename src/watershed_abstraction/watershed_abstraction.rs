@@ -202,8 +202,8 @@ pub fn abstract_subcatchments(
                 let flowpaths: FlowpathCollection = walk_flowpaths(
                     topaz_id, indices, &subwta, &relief, &flovec, &fvslop, &taspec,
                 );
-                let subcatchment: Flowpath =
-                    flowpaths.abstract_subcatchment(&subwta, &taspec, &flovec, &channels, indices);
+                let subcatchment: Flowpath = flowpaths
+                    .abstract_subcatchment(&subwta, &taspec, &fvslop, &flovec, &channels, indices);
                 (subcatchment, topaz_id, flowpaths)
             })
             .collect();
@@ -226,8 +226,8 @@ pub fn abstract_subcatchments(
                 let flowpaths: FlowpathCollection = walk_flowpaths(
                     topaz_id, indices, &subwta, &relief, &flovec, &fvslop, &taspec,
                 );
-                let subcatchment: Flowpath =
-                    flowpaths.abstract_subcatchment(&subwta, &taspec, &flovec, &channels, indices);
+                let subcatchment: Flowpath = flowpaths
+                    .abstract_subcatchment(&subwta, &taspec, &fvslop, &flovec, &channels, indices);
                 (subcatchment, topaz_id)
             })
             .collect();

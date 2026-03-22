@@ -19,6 +19,39 @@ pub struct FlowpathCollection {
     pub subflows: Option<HashMap<i32, FlowpathCollection>>,
 }
 
+pub(crate) fn zonal_median_slope(fvslop: &Raster<f32>, indices: &Vec<usize>) -> f64 {
+    let no_data = fvslop.no_data;
+    let mut slopes: Vec<f64> = indices
+        .iter()
+        .filter_map(|&index| {
+            let slope = fvslop.data[index];
+            if !slope.is_finite() {
+                return None;
+            }
+            if let Some(no_data_val) = no_data {
+                if slope == no_data_val {
+                    return None;
+                }
+            }
+            Some(slope as f64)
+        })
+        .collect();
+
+    assert!(
+        !slopes.is_empty(),
+        "zonal_median_slope found no finite values for indices len={}",
+        indices.len()
+    );
+
+    slopes.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let n = slopes.len();
+    if n % 2 == 0 {
+        (slopes[n / 2 - 1] + slopes[n / 2]) / 2.0
+    } else {
+        slopes[n / 2]
+    }
+}
+
 impl FlowpathCollection {
     #[allow(dead_code)]
     pub fn get_fp_by_topaz_id(&self, topaz_id: i32) -> Option<&Flowpath> {
@@ -159,6 +192,7 @@ impl FlowpathCollection {
         &self,
         subwta: &Raster<i32>,
         taspec: &Raster<f32>,
+        fvslop: &Raster<f32>,
         flovec: &Raster<u8>,
         channels: &FlowpathCollection,
         indices: &Vec<usize>,
@@ -220,7 +254,7 @@ impl FlowpathCollection {
             elevs.push(elevation);
         }
 
-        let slope_scalar: f64 = (elevs[0] - elevs[elevs.len() - 1]) / length;
+        let slope_scalar = zonal_median_slope(fvslop, indices);
         let elevation: f64 = elevs[0];
 
         let vec_indices: Vec<usize> = indices.clone();
@@ -950,6 +984,44 @@ impl FlowpathCollection {
         }
 
         edge_flowpaths
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::raster::{MapType, Raster};
+
+    use super::zonal_median_slope;
+
+    fn mock_fvslop(values: Vec<f32>, no_data: Option<f32>) -> Raster<f32> {
+        Raster::new(
+            values.len(),
+            1,
+            1.0,
+            values,
+            no_data,
+            [0.0, 1.0, 0.0, 0.0, 0.0, -1.0],
+            None,
+            String::from(""),
+            String::from("fvslop"),
+            MapType::FVSLOP,
+        )
+    }
+
+    #[test]
+    fn zonal_median_slope_even_count() {
+        let fvslop = mock_fvslop(vec![0.5, 0.1, 0.3, 0.9], None);
+        let indices = vec![0, 1, 2, 3];
+        let median = zonal_median_slope(&fvslop, &indices);
+        assert!((median - 0.4).abs() < 1e-6);
+    }
+
+    #[test]
+    fn zonal_median_slope_ignores_no_data_and_nan() {
+        let fvslop = mock_fvslop(vec![0.2, -9999.0, f32::NAN, 0.6, 0.4], Some(-9999.0));
+        let indices = vec![0, 1, 2, 3, 4];
+        let median = zonal_median_slope(&fvslop, &indices);
+        assert!((median - 0.4).abs() < 1e-6);
     }
 }
 

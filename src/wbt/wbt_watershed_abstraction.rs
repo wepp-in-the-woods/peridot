@@ -11,7 +11,7 @@ use rayon::prelude::*;
 
 use crate::d8_wbt_to_topaz::remap_whitebox_d8_to_topaz_in_place;
 use crate::flowpath::Flowpath;
-use crate::flowpath_collection::FlowpathCollection;
+use crate::flowpath_collection::{zonal_median_slope, FlowpathCollection};
 use crate::netw::write_network;
 use crate::raster::Raster;
 use crate::watershed_abstraction::{abstract_subcatchments, walk_channels, walk_flowpath, PATHS};
@@ -523,6 +523,7 @@ fn select_representative_flowpath(
 fn build_representative_hillslope(
     representative_fp: &Flowpath,
     subwta: &Raster<i32>,
+    fvslop: &Raster<f32>,
     taspec: &Raster<f32>,
     channels: &FlowpathCollection,
     indices: &Vec<usize>,
@@ -555,13 +556,7 @@ fn build_representative_hillslope(
     let aspect: f64 = taspec.determine_aspect(indices);
     let centroid_px = subwta.centroid_of(indices);
     let elevation = representative_fp.elevs[0];
-    let elev_drop =
-        representative_fp.elevs[0] - representative_fp.elevs[representative_fp.elevs.len() - 1];
-    let slope_scalar = if length > 0.0 {
-        elev_drop / length
-    } else {
-        0.0
-    };
+    let slope_scalar = zonal_median_slope(fvslop, indices);
 
     Flowpath::new(
         representative_fp.indices.clone(),
@@ -610,7 +605,14 @@ fn abstract_subcatchments_representative(
             let representative_fp = select_representative_flowpath(
                 topaz_id, indices, subwta, relief, flovec, fvslop, taspec, discha,
             );
-            build_representative_hillslope(&representative_fp, subwta, taspec, channels, indices)
+            build_representative_hillslope(
+                &representative_fp,
+                subwta,
+                fvslop,
+                taspec,
+                channels,
+                indices,
+            )
         })
         .collect();
 
@@ -712,6 +714,58 @@ mod tests {
                     rep_len / median_len
                 );
             }
+        }
+    }
+
+    #[test]
+    fn representative_hillslope_slope_scalar_matches_zonal_median() {
+        let fixture = fixture_wbt_path();
+
+        let subwta = Raster::<i32>::read(fixture.join("subwta.tif").to_str().unwrap()).unwrap();
+        let relief = Raster::<f32>::read(fixture.join("relief.tif").to_str().unwrap()).unwrap();
+        let mut flovec = Raster::<u8>::read(fixture.join("flovec.tif").to_str().unwrap()).unwrap();
+        let fvslop = Raster::<f32>::read(fixture.join("fvslop.tif").to_str().unwrap()).unwrap();
+        let taspec = Raster::<f32>::read(fixture.join("taspec.tif").to_str().unwrap()).unwrap();
+        let discha = Raster::<f32>::read(fixture.join("discha.tif").to_str().unwrap()).unwrap();
+
+        remap_whitebox_d8_to_topaz_in_place(&mut flovec);
+
+        let (netw, _) = read_wbt_netw_tab(fixture.join("netw.tsv").to_str().unwrap()).unwrap();
+        let indices_map = subwta.indices_map();
+        let channels = walk_channels(
+            &subwta,
+            &indices_map,
+            &relief,
+            &flovec,
+            &fvslop,
+            &taspec,
+            &netw,
+            false,
+        );
+
+        let hillslopes = abstract_subcatchments_representative(
+            &subwta,
+            &indices_map,
+            &relief,
+            &flovec,
+            &fvslop,
+            &taspec,
+            &discha,
+            &channels,
+        );
+
+        for fp in &hillslopes.flowpaths {
+            let indices = indices_map
+                .get(&fp.topaz_id)
+                .expect("missing hillslope indices");
+            let expected = zonal_median_slope(&fvslop, indices);
+            assert!(
+                (fp.slope_scalar - expected).abs() < 1e-12,
+                "topaz_id={} expected={} got={}",
+                fp.topaz_id,
+                expected,
+                fp.slope_scalar
+            );
         }
     }
 }
