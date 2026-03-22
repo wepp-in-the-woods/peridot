@@ -306,6 +306,16 @@ fn detect_format(path: &Path) -> String {
     }
 }
 
+fn slope_bundle_key(rel: &str) -> Option<&'static str> {
+    if rel.starts_with("watershed/slope_files/hillslopes/") {
+        return Some("watershed/slope_files/hillslopes/*");
+    }
+    if rel.starts_with("watershed/slope_files/flowpaths/") {
+        return Some("watershed/slope_files/flowpaths/*");
+    }
+    None
+}
+
 fn build_readme_content(
     watershed_dir: &Path,
     run_flags: &ManifestRunFlags,
@@ -315,15 +325,34 @@ fn build_readme_content(
     let mut files: Vec<PathBuf> = Vec::new();
     collect_files(watershed_dir, &mut files)?;
 
-    let mut manifest_rows: Vec<(String, String, u64)> = Vec::new();
+    let mut manifest_rows: Vec<(String, String, u64, Option<String>)> = Vec::new();
+    let mut slope_bundle_sizes: HashMap<String, (u64, usize)> = HashMap::new();
     for path in files {
         let rel = to_manifest_relative(watershed_dir, &path)?;
         if rel == "watershed/README.md" {
             continue;
         }
+        if let Some(bundle_key) = slope_bundle_key(&rel) {
+            let size = fs::metadata(&path)?.len();
+            let entry = slope_bundle_sizes
+                .entry(bundle_key.to_string())
+                .or_insert((0, 0));
+            entry.0 += size;
+            entry.1 += 1;
+            continue;
+        }
         let format = detect_format(&path);
         let size = fs::metadata(&path)?.len();
-        manifest_rows.push((rel, format, size));
+        manifest_rows.push((rel, format, size, None));
+    }
+
+    for (bundle_path, (total_size, file_count)) in slope_bundle_sizes {
+        manifest_rows.push((
+            bundle_path,
+            "slp bundle".to_string(),
+            total_size,
+            Some(format!("{} files", file_count)),
+        ));
     }
 
     manifest_rows.sort_by(|a, b| a.0.cmp(&b.0));
@@ -365,17 +394,19 @@ fn build_readme_content(
     markdown.push_str("| Path | Format | Size (bytes) | Rows |\n");
     markdown.push_str("| --- | --- | ---: | ---: |\n");
 
-    for (rel, format, size) in &manifest_rows {
-        let rows = tabular_map
-            .get(rel)
-            .map(|summary| summary.rows.to_string())
-            .unwrap_or_else(|| {
-                if format == "parquet" || format == "csv" {
-                    "unknown".to_string()
-                } else {
-                    "-".to_string()
-                }
-            });
+    for (rel, format, size, rows_override) in &manifest_rows {
+        let rows = rows_override.clone().unwrap_or_else(|| {
+            tabular_map
+                .get(rel)
+                .map(|summary| summary.rows.to_string())
+                .unwrap_or_else(|| {
+                    if format == "parquet" || format == "csv" {
+                        "unknown".to_string()
+                    } else {
+                        "-".to_string()
+                    }
+                })
+        });
         markdown.push_str(&format!("| {} | {} | {} | {} |\n", rel, format, size, rows));
     }
 

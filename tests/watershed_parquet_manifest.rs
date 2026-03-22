@@ -169,6 +169,16 @@ fn writes_watershed_readme_manifest_with_flags_and_schema() {
 
     fs::write(watershed_dir.join("network.txt"), "14|0\n").expect("failed to write network");
     fs::write(watershed_dir.join("channels.geojson"), "{}").expect("failed to write geojson");
+    fs::write(
+        watershed_dir.join("slope_files/hillslopes/hill_11.slp"),
+        "demo slope file",
+    )
+    .expect("failed to write hill_11 slope file");
+    fs::write(
+        watershed_dir.join("slope_files/hillslopes/hill_12.slp"),
+        "demo slope file",
+    )
+    .expect("failed to write hill_12 slope file");
 
     let tabular_outputs = vec![
         channels_summary(channels.flowpaths.len(), "parquet"),
@@ -200,6 +210,10 @@ fn writes_watershed_readme_manifest_with_flags_and_schema() {
     assert!(readme.contains("watershed/hillslopes.parquet"));
     assert!(readme.contains("watershed/channels.parquet"));
     assert!(readme.contains("watershed/flowpaths.parquet"));
+    assert!(readme.contains("watershed/slope_files/hillslopes/*"));
+    assert!(readme.contains("slp bundle"));
+    assert!(readme.contains("2 files"));
+    assert!(!readme.contains("watershed/slope_files/hillslopes/hill_11.slp"));
     assert!(readme.contains("| topaz_id | int32 |"));
     assert!(readme.contains("| fp_id | int32 |"));
     assert!(readme.contains(
