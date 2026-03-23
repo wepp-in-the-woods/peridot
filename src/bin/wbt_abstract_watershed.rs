@@ -43,7 +43,7 @@ struct Opts {
     #[clap(short, long, default_value = "false")]
     bieger2015_widths: bool,
 
-    /// Skip writing flowpaths outputs (flowpaths.csv and slope_files/flowpaths)
+    /// Skip writing flowpaths outputs (flowpaths.parquet and slope_files/flowpaths)
     #[clap(long, default_value = "false")]
     skip_flowpaths: bool,
 

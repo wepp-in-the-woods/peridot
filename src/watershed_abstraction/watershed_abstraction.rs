@@ -136,9 +136,6 @@ pub fn abstract_watershed(
     let mut tasks: Vec<Box<dyn FnOnce() -> Result<()> + Send>> = vec![
         Box::new(|| channels.write_channel_slp("watershed/slope_files/channels.slp", max_points)),
         Box::new(|| {
-            channels.write_chn_metadata_to_csv("watershed/channels.csv", &subwta.wgs_transform)
-        }),
-        Box::new(|| {
             channels
                 .write_chn_metadata_to_parquet("watershed/channels.parquet", &subwta.wgs_transform)
         }),
@@ -151,9 +148,6 @@ pub fn abstract_watershed(
             )
         }),
         Box::new(|| {
-            hillslopes.write_metadata_to_csv("watershed/hillslopes.csv", &subwta.wgs_transform)
-        }),
-        Box::new(|| {
             hillslopes
                 .write_metadata_to_parquet("watershed/hillslopes.parquet", &subwta.wgs_transform)
         }),
@@ -161,10 +155,6 @@ pub fn abstract_watershed(
     ];
 
     if write_flowpaths {
-        tasks.push(Box::new(|| {
-            hillslopes
-                .write_subflows_metadata_to_csv("watershed/flowpaths.csv", &subwta.wgs_transform)
-        }));
         tasks.push(Box::new(|| {
             hillslopes.write_subflow_slps("watershed/slope_files/flowpaths/", max_points)
         }));
@@ -187,14 +177,11 @@ pub fn abstract_watershed(
 
     let mut tabular_outputs: Vec<TabularOutputSummary> = vec![
         channels_summary(channels.flowpaths.len(), "parquet"),
-        channels_summary(channels.flowpaths.len(), "csv"),
         hillslopes_summary(hillslopes.flowpaths.len(), "parquet"),
-        hillslopes_summary(hillslopes.flowpaths.len(), "csv"),
     ];
     if write_flowpaths {
         let flowpath_rows = hillslopes.subflow_row_count();
         tabular_outputs.push(flowpaths_summary(flowpath_rows, "parquet"));
-        tabular_outputs.push(flowpaths_summary(flowpath_rows, "csv"));
     }
 
     let run_flags = ManifestRunFlags {

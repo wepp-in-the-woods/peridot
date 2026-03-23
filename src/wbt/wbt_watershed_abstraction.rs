@@ -286,13 +286,6 @@ pub fn wbt_abstract_watershed(
             result
         }),
         Box::new(|| {
-            info!("writing channels.csv");
-            let result =
-                channels.write_chn_metadata_to_csv("watershed/channels.csv", &subwta.wgs_transform);
-            info!("wrote channels.csv");
-            result
-        }),
-        Box::new(|| {
             info!("writing channels.parquet");
             let result = channels
                 .write_chn_metadata_to_parquet("watershed/channels.parquet", &subwta.wgs_transform);
@@ -311,13 +304,6 @@ pub fn wbt_abstract_watershed(
             result
         }),
         Box::new(|| {
-            info!("writing hillslopes.csv");
-            let result =
-                hillslopes.write_metadata_to_csv("watershed/hillslopes.csv", &subwta.wgs_transform);
-            info!("wrote hillslopes.csv");
-            result
-        }),
-        Box::new(|| {
             info!("writing hillslopes.parquet");
             let result = hillslopes
                 .write_metadata_to_parquet("watershed/hillslopes.parquet", &subwta.wgs_transform);
@@ -333,13 +319,6 @@ pub fn wbt_abstract_watershed(
     ];
 
     if write_flowpaths {
-        tasks.push(Box::new(|| {
-            info!("writing flowpaths.csv");
-            let result = hillslopes
-                .write_subflows_metadata_to_csv("watershed/flowpaths.csv", &subwta.wgs_transform);
-            info!("wrote flowpaths.csv");
-            result
-        }));
         tasks.push(Box::new(|| {
             info!("writing flowpath slps");
             let result =
@@ -368,14 +347,11 @@ pub fn wbt_abstract_watershed(
 
     let mut tabular_outputs: Vec<TabularOutputSummary> = vec![
         channels_summary(channels.flowpaths.len(), "parquet"),
-        channels_summary(channels.flowpaths.len(), "csv"),
         hillslopes_summary(hillslopes.flowpaths.len(), "parquet"),
-        hillslopes_summary(hillslopes.flowpaths.len(), "csv"),
     ];
     if write_flowpaths {
         let flowpath_rows = hillslopes.subflow_row_count();
         tabular_outputs.push(flowpaths_summary(flowpath_rows, "parquet"));
-        tabular_outputs.push(flowpaths_summary(flowpath_rows, "csv"));
     }
 
     let run_flags = ManifestRunFlags {
