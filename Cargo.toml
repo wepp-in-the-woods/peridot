@@ -16,6 +16,10 @@ path = "src/bin/wbt_abstract_watershed.rs"
 name = "sub_fields_abstraction"
 path = "src/bin/sub_fields_abstraction.rs"
 
+[[bin]]
+name = "trace_downslope_flowpath"
+path = "src/bin/trace_downslope_flowpath.rs"
+
 [dependencies]
 gdal = {version = "0.16", features = ["bindgen"] }
 gdal-sys = { version = "0.9.1", optional = true }
