@@ -32,6 +32,9 @@ pub struct Flowpath {
     pub elevation: f64,
     pub order: i32,
     pub areaup: f64,
+    pub length_estimate_mode: String,
+    pub length_area_over_channel: f64,
+    pub length_edge_median: f64,
 }
 
 impl Default for Flowpath {
@@ -58,6 +61,9 @@ impl Default for Flowpath {
             elevation: -1.0,
             order: -1,
             areaup: -1.0,
+            length_estimate_mode: String::from("unspecified"),
+            length_area_over_channel: f64::NAN,
+            length_edge_median: f64::NAN,
         }
     }
 }
@@ -115,7 +121,23 @@ impl Flowpath {
             elevation,
             order,
             areaup,
+            length_estimate_mode: String::from("unspecified"),
+            length_area_over_channel: f64::NAN,
+            length_edge_median: f64::NAN,
         }
+    }
+
+    #[allow(dead_code)]
+    pub fn with_length_estimate_metadata(
+        mut self,
+        mode: &str,
+        length_area_over_channel: Option<f64>,
+        length_edge_median: Option<f64>,
+    ) -> Self {
+        self.length_estimate_mode = mode.to_string();
+        self.length_area_over_channel = length_area_over_channel.unwrap_or(f64::NAN);
+        self.length_edge_median = length_edge_median.unwrap_or(f64::NAN);
+        self
     }
 
     #[allow(dead_code)]

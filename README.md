@@ -79,6 +79,7 @@ Program flow:
 - `abstract_subcatchments` loops over each hillslope ID and:
   - `walk_flowpaths` traces a flowpath from every pixel in the hillslope by walking downstream in `flovec` until the flow leaves the hillslope, hits `flow_dir = 0`, or loops.
   - `FlowpathCollection::abstract_subcatchment` aggregates those flowpaths into a single representative hillslope profile using weighted slope averaging.
+  - Side hillslopes (`topaz_id % 10 in {2,3}`) cap `length` using `min(area/channel_length, median(edge/source flowpath lengths))` and recompute `width` to preserve area.
 - Output writers run in parallel to emit slope files, parquet/CSV tabular outputs, GeoJSON, and (optionally) flowpath bundles.
 
 Data outputs:
@@ -88,6 +89,7 @@ Data outputs:
 - Optional `flowpaths.parquet` (`flowpaths.csv` compatibility output) + `slope_files/flowpaths/fps_<topaz_id>.slps` with per-pixel subflowpaths.
 - `channels.geojson` and `network.txt` for diagnostics.
 - `README.md` manifest with run flags, file listing (format/size/rows), and schema summaries.
+- `hillslopes.parquet` includes length provenance fields (`length_estimate_mode`, `length_area_over_channel`, `length_edge_median`) to audit side-hillslope cap behavior.
 
 ## Representative flowpath mode (WBT only)
 
@@ -105,6 +107,7 @@ High-level approach:
   - Rank source cells by `discha` and choose the median; break ties deterministically (for example, higher `relief`, then row-major index).
 - Trace one flowpath from that seed cell using the existing `walk_flowpath` downstream logic.
 - Build the hillslope profile from that single path (or keep the existing length/width logic but swap in the representative path's slope sequence).
+- Side hillslopes (`topaz_id % 10 in {2,3}`) still apply the same cap rule as non-representative mode (`min(area/channel_length, median source-flowpath length)`).
 - Emit the same outputs as today, but always skip flowpath tabular/slope outputs in representative mode (equivalent to forcing `--skip-flowpaths`).
 
 Design note: using the median source-cell `discha` value keeps representative lengths closer to the current algorithm that averages source-cell flowpaths. A max-`discha` seed would bias lengths longer, shorten inferred widths (area / length), and could push erosion rates higher.

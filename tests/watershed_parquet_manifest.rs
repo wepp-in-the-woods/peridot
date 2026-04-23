@@ -135,6 +135,11 @@ fn writes_watershed_parquet_outputs() {
     let flowpath_columns = parquet_columns(&watershed_dir.join("flowpaths.parquet"));
     assert!(flowpath_columns.contains(&"fp_id".to_string()));
 
+    let hillslope_columns = parquet_columns(&watershed_dir.join("hillslopes.parquet"));
+    assert!(hillslope_columns.contains(&"length_estimate_mode".to_string()));
+    assert!(hillslope_columns.contains(&"length_area_over_channel".to_string()));
+    assert!(hillslope_columns.contains(&"length_edge_median".to_string()));
+
     let _ = fs::remove_dir_all(wd);
 }
 
@@ -216,6 +221,9 @@ fn writes_watershed_readme_manifest_with_flags_and_schema() {
     assert!(!readme.contains("watershed/slope_files/hillslopes/hill_11.slp"));
     assert!(readme.contains("| topaz_id | int32 |"));
     assert!(readme.contains("| fp_id | int32 |"));
+    assert!(readme.contains("| length_estimate_mode | utf8 |"));
+    assert!(readme.contains("| length_area_over_channel | float64 |"));
+    assert!(readme.contains("| length_edge_median | float64 |"));
     assert!(readme.contains(
         "Flowpath tabular and slope outputs are expected because `skip_flowpaths=false`."
     ));

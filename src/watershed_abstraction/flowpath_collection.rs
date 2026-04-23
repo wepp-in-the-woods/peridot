@@ -4,7 +4,7 @@ use std::io::{Result, Write};
 use std::path::Path;
 use std::sync::Arc;
 
-use arrow_array::{ArrayRef, Float64Array, Int32Array, RecordBatch};
+use arrow_array::{ArrayRef, Float64Array, Int32Array, RecordBatch, StringArray};
 use arrow_schema::{DataType, Field, Schema};
 use geojson::{Feature, FeatureCollection};
 use parquet::arrow::ArrowWriter;
@@ -87,6 +87,157 @@ pub(crate) fn zonal_median_slope(fvslop: &Raster<f32>, indices: &Vec<usize>) -> 
         (slopes[n / 2 - 1] + slopes[n / 2]) / 2.0
     } else {
         slopes[n / 2]
+    }
+}
+
+fn median_length(values: &mut [f64]) -> Option<f64> {
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let n = values.len();
+    if n % 2 == 0 {
+        Some((values[n / 2 - 1] + values[n / 2]) / 2.0)
+    } else {
+        Some(values[n / 2])
+    }
+}
+
+fn source_cells_from_indices(
+    indices: &[usize],
+    subwta: &Raster<i32>,
+    flovec: &Raster<u8>,
+) -> Vec<usize> {
+    let Some(&first_index) = indices.first() else {
+        return Vec::new();
+    };
+
+    let topaz_id = subwta.data[first_index];
+    debug_assert!(
+        indices.iter().all(|&index| subwta.data[index] == topaz_id),
+        "source-cell detection expects one topaz_id per indices slice"
+    );
+
+    let mut has_upstream: HashSet<usize> = HashSet::with_capacity(indices.len() / 4 + 1);
+    for &index in indices {
+        let flow_dir = flovec.data[index] as i32;
+        if flow_dir == 0 {
+            continue;
+        }
+
+        let Some((dx, dy)) = PATHS.get(&flow_dir) else {
+            continue;
+        };
+
+        let (x, y) = subwta.index_to_xy(index);
+        let next_x = x as isize + dx;
+        let next_y = y as isize + dy;
+        if next_x < 0
+            || next_y < 0
+            || next_x >= subwta.width as isize
+            || next_y >= subwta.height as isize
+        {
+            continue;
+        }
+
+        let next_index = subwta.xy_to_index(next_x as usize, next_y as usize);
+        if subwta.data[next_index] == topaz_id {
+            has_upstream.insert(next_index);
+        }
+    }
+
+    indices
+        .iter()
+        .copied()
+        .filter(|index| !has_upstream.contains(index))
+        .collect()
+}
+
+fn source_flowpath_median_length(flowpaths: &[Flowpath], source_cells: &[usize]) -> Option<f64> {
+    if source_cells.is_empty() {
+        return None;
+    }
+    let source_set: HashSet<usize> = source_cells.iter().copied().collect();
+
+    let mut lengths: Vec<f64> = flowpaths
+        .iter()
+        .filter_map(|fp| {
+            let head_index = fp.indices.first().copied()?;
+            if source_set.contains(&head_index) {
+                Some(fp.length)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    median_length(lengths.as_mut_slice())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SideLengthEstimateMode {
+    AreaOverChannel,
+    EdgeMedianCapped,
+    AreaOverChannelNoEdge,
+}
+
+impl SideLengthEstimateMode {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::AreaOverChannel => "side_area_over_channel",
+            Self::EdgeMedianCapped => "side_edge_median_capped",
+            Self::AreaOverChannelNoEdge => "side_area_over_channel_no_edge",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SideLengthSelection {
+    pub length: f64,
+    pub width: f64,
+    pub length_area_over_channel: f64,
+    pub edge_median: Option<f64>,
+    pub mode: SideLengthEstimateMode,
+}
+
+pub(crate) fn select_side_hillslope_geometry(
+    area: f64,
+    channel_length: f64,
+    edge_median: Option<f64>,
+) -> SideLengthSelection {
+    assert!(
+        channel_length.is_finite() && channel_length > 0.0,
+        "channel_length must be finite and > 0.0, got {}",
+        channel_length
+    );
+    let length_area_over_channel = area / channel_length;
+
+    let edge_median = edge_median.filter(|v| v.is_finite() && *v > 0.0);
+    let (length, mode) = match edge_median {
+        Some(edge) if edge < length_area_over_channel => {
+            (edge, SideLengthEstimateMode::EdgeMedianCapped)
+        }
+        Some(_) => (
+            length_area_over_channel,
+            SideLengthEstimateMode::AreaOverChannel,
+        ),
+        None => (
+            length_area_over_channel,
+            SideLengthEstimateMode::AreaOverChannelNoEdge,
+        ),
+    };
+    assert!(
+        length.is_finite() && length > 0.0,
+        "invalid selected side length {}",
+        length
+    );
+
+    SideLengthSelection {
+        length,
+        width: area / length,
+        length_area_over_channel,
+        edge_median,
+        mode,
     }
 }
 
@@ -247,21 +398,37 @@ impl FlowpathCollection {
         // If subcatchment is a source type then we calculate the distance
         // by taking a weighted average based on the length of the flowpaths
         // contained in the subcatchment
-        let length: f64;
-        let width: f64;
-        if topaz_id % 10 == 1 {
-            // find length by finding each pixels and then taking the median length of the flowpaths originating from those edge pixels.
-            let edge_flowpaths = self.get_edge_flowpaths2(subwta, flovec);
-            length = flowpaths_median_length(&edge_flowpaths).unwrap_or(0.0);
-            width = area / length;
-        } else {
-            // Otherwise the  width of the subcatchment is determined by the
-            // channel that the subcatchment drains into. The length is
-            // then determined by the area / width
-
-            width = chn_summary.length;
-            length = area / width;
-        }
+        let source_cells = source_cells_from_indices(indices, subwta, flovec);
+        let edge_median = source_flowpath_median_length(&self.flowpaths, &source_cells);
+        let (length, width, length_estimate_mode, length_area_over_channel, length_edge_median) =
+            if topaz_id % 10 == 1 {
+                // find length by taking the median length of flowpaths
+                // that originate from source cells of the subcatchment.
+                let length = edge_median.unwrap_or(0.0);
+                (
+                    length,
+                    area / length,
+                    "top_edge_median",
+                    None,
+                    if length.is_finite() && length > 0.0 {
+                        Some(length)
+                    } else {
+                        None
+                    },
+                )
+            } else {
+                // Otherwise the width is inferred from area consistency after
+                // selecting the side-length candidate.
+                let selection =
+                    select_side_hillslope_geometry(area, chn_summary.length, edge_median);
+                (
+                    selection.length,
+                    selection.width,
+                    selection.mode.as_str(),
+                    Some(selection.length_area_over_channel),
+                    selection.edge_median,
+                )
+            };
 
         let mut direction: f64 = chn_summary.direction;
         match topaz_id % 10 {
@@ -316,6 +483,11 @@ impl FlowpathCollection {
             -1,
             -1.0,
         )
+        .with_length_estimate_metadata(
+            length_estimate_mode,
+            length_area_over_channel,
+            length_edge_median,
+        )
     }
 
     #[allow(dead_code)]
@@ -336,9 +508,9 @@ impl FlowpathCollection {
         let length: f64;
         let width: f64;
 
-        // find length by finding each pixels and then taking the median length of the flowpaths originating from those edge pixels.
-        let edge_flowpaths = self.get_edge_flowpaths2(intersection_subwta, flovec);
-        length = flowpaths_median_length(&edge_flowpaths).unwrap_or(0.0);
+        // find length by taking median of flowpaths that originate from source cells.
+        let source_cells = source_cells_from_indices(indices, intersection_subwta, flovec);
+        length = source_flowpath_median_length(&self.flowpaths, &source_cells).unwrap_or(0.0);
         width = area / length;
 
         let direction: f64 = longest_fp.direction;
@@ -742,6 +914,9 @@ impl FlowpathCollection {
         let mut widths: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
         let mut directions: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
         let mut aspects: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
+        let mut length_estimate_modes: Vec<String> = Vec::with_capacity(self.flowpaths.len());
+        let mut lengths_area_over_channel: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
+        let mut lengths_edge_median: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
         let mut areas: Vec<i32> = Vec::with_capacity(self.flowpaths.len());
         let mut elevations: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
         let mut centroid_px: Vec<i32> = Vec::with_capacity(self.flowpaths.len());
@@ -757,6 +932,9 @@ impl FlowpathCollection {
             widths.push(fp.width);
             directions.push(fp.direction);
             aspects.push(fp.aspect);
+            length_estimate_modes.push(fp.length_estimate_mode.clone());
+            lengths_area_over_channel.push(fp.length_area_over_channel);
+            lengths_edge_median.push(fp.length_edge_median);
             areas.push(fp.area_m2() as i32);
             elevations.push(fp.elevation);
             centroid_px.push(fp.centroid_px.0);
@@ -772,6 +950,9 @@ impl FlowpathCollection {
             Field::new("width", DataType::Float64, false),
             Field::new("direction", DataType::Float64, false),
             Field::new("aspect", DataType::Float64, false),
+            Field::new("length_estimate_mode", DataType::Utf8, false),
+            Field::new("length_area_over_channel", DataType::Float64, false),
+            Field::new("length_edge_median", DataType::Float64, false),
             Field::new("area", DataType::Int32, false),
             Field::new("elevation", DataType::Float64, false),
             Field::new("centroid_px", DataType::Int32, false),
@@ -790,6 +971,9 @@ impl FlowpathCollection {
                 Arc::new(Float64Array::from(widths)),
                 Arc::new(Float64Array::from(directions)),
                 Arc::new(Float64Array::from(aspects)),
+                Arc::new(StringArray::from(length_estimate_modes)),
+                Arc::new(Float64Array::from(lengths_area_over_channel)),
+                Arc::new(Float64Array::from(lengths_edge_median)),
                 Arc::new(Int32Array::from(areas)),
                 Arc::new(Float64Array::from(elevations)),
                 Arc::new(Int32Array::from(centroid_px)),
@@ -952,6 +1136,9 @@ impl FlowpathCollection {
             String::from("width"),
             String::from("direction"),
             String::from("aspect"),
+            String::from("length_estimate_mode"),
+            String::from("length_area_over_channel"),
+            String::from("length_edge_median"),
             String::from("area"),
             String::from("elevation"),
             String::from("centroid_px"),
@@ -972,6 +1159,9 @@ impl FlowpathCollection {
                 fp.width.to_string(),
                 fp.direction.to_string(),
                 fp.aspect.to_string(),
+                fp.length_estimate_mode.to_string(),
+                fp.length_area_over_channel.to_string(),
+                fp.length_edge_median.to_string(),
                 (fp.area_m2() as i32).to_string(),
                 fp.elevation.to_string(),
                 fp.centroid_px.0.to_string(),
@@ -1270,7 +1460,7 @@ impl FlowpathCollection {
 mod tests {
     use crate::raster::{MapType, Raster};
 
-    use super::zonal_median_slope;
+    use super::{select_side_hillslope_geometry, zonal_median_slope, SideLengthEstimateMode};
 
     fn mock_fvslop(values: Vec<f32>, no_data: Option<f32>) -> Raster<f32> {
         Raster::new(
@@ -1302,29 +1492,37 @@ mod tests {
         let median = zonal_median_slope(&fvslop, &indices);
         assert!((median - 0.4).abs() < 1e-6);
     }
-}
 
-// Method to calculate the median length of flowpaths
-fn flowpaths_median_length(flowpaths: &Vec<Flowpath>) -> Option<f64> {
-    let num_flowpaths = flowpaths.len();
-
-    // Return None if the vector is empty
-    if num_flowpaths == 0 {
-        return None;
+    #[test]
+    fn side_length_selection_caps_to_edge_median_and_preserves_area() {
+        let area = 10_000.0;
+        let selection = select_side_hillslope_geometry(area, 50.0, Some(120.0));
+        assert_eq!(selection.mode, SideLengthEstimateMode::EdgeMedianCapped);
+        assert!((selection.length_area_over_channel - 200.0).abs() < 1e-9);
+        assert!((selection.length - 120.0).abs() < 1e-9);
+        assert!((selection.width * selection.length - area).abs() < 1e-6);
     }
 
-    // Extract the lengths and sort them
-    let mut lengths: Vec<f64> = flowpaths.iter().map(|fp| fp.length).collect();
-    lengths.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    #[test]
+    fn side_length_selection_uses_area_over_channel_when_edge_is_longer() {
+        let area = 10_000.0;
+        let selection = select_side_hillslope_geometry(area, 50.0, Some(260.0));
+        assert_eq!(selection.mode, SideLengthEstimateMode::AreaOverChannel);
+        assert!((selection.length_area_over_channel - 200.0).abs() < 1e-9);
+        assert!((selection.length - 200.0).abs() < 1e-9);
+        assert!((selection.width - 50.0).abs() < 1e-9);
+        assert!((selection.width * selection.length - area).abs() < 1e-6);
+    }
 
-    // Calculate median based on odd or even number of flowpaths
-    if num_flowpaths % 2 == 0 {
-        // Even number of flowpaths: average the two middle elements
-        let mid_right = num_flowpaths / 2;
-        let mid_left = mid_right - 1;
-        Some((lengths[mid_left] + lengths[mid_right]) / 2.0)
-    } else {
-        // Odd number of flowpaths: middle element
-        Some(lengths[num_flowpaths / 2])
+    #[test]
+    fn side_length_selection_falls_back_when_edge_is_missing() {
+        let area = 10_000.0;
+        let selection = select_side_hillslope_geometry(area, 50.0, None);
+        assert_eq!(
+            selection.mode,
+            SideLengthEstimateMode::AreaOverChannelNoEdge
+        );
+        assert!((selection.length - 200.0).abs() < 1e-9);
+        assert!((selection.width - 50.0).abs() < 1e-9);
     }
 }

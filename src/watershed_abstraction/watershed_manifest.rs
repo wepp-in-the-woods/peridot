@@ -55,6 +55,18 @@ fn hillslope_schema() -> Vec<TabularColumn> {
             data_type: "float64",
         },
         TabularColumn {
+            name: "length_estimate_mode",
+            data_type: "utf8",
+        },
+        TabularColumn {
+            name: "length_area_over_channel",
+            data_type: "float64",
+        },
+        TabularColumn {
+            name: "length_edge_median",
+            data_type: "float64",
+        },
+        TabularColumn {
             name: "area",
             data_type: "int32",
         },
