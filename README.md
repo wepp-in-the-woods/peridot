@@ -127,7 +127,7 @@ Running `sub_fields_abstraction` creates or refreshes `<run>/ag_fields/sub_field
 - `slope_files/field_<field_id>_<topaz_id>.slp`
 - `slope_files/flowpaths/field_<field_id>_<topaz_id>.slps`
 - `fields.csv`
-- `field_flowpaths.csv`
+- `field_flowpaths.csv` with parent `topaz_id` and flowpath-record `flowpath_topaz_id` columns
 
 See the [watershed output contract](docs/contracts/watershed-output-contract.md) for schemas, conditional behavior, and current error-boundary notes.
 

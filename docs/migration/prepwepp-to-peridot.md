@@ -61,7 +61,7 @@ Representative-flowpath mode is an abstraction-mode choice. It uses one determin
 
 Peridot's current watershed contract is Parquet-first. Documentation or code that still requires `watershed/channels.csv`, `watershed/hillslopes.csv`, or `watershed/flowpaths.csv` is depending on historical or compatibility behavior, not the current Peridot CLI output.
 
-Sub-field output currently uses CSV metadata and has a known duplicated `topaz_id` header in `field_flowpaths.csv`. Treat that as current behavior until a schema cleanup package is approved.
+Sub-field output uses CSV metadata. `field_flowpaths.csv` preserves parent hillslope `topaz_id` and uses `flowpath_topaz_id` for the flowpath record's own topaz identifier so consumers do not depend on duplicate-header parser behavior.
 
 ## WEPPpy Integration Notes
 

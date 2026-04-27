@@ -56,7 +56,7 @@ RUST_LOG=info ./target/release/sub_fields_abstraction /path/to/run \
 
 ## Post-Run Validation
 
-Do not rely only on process exit status for watershed abstraction. Validate required outputs.
+Treat non-zero process status as a failed abstraction. Still validate required outputs after a zero exit status so deployment-specific expectations and downstream post-processing assumptions are checked explicitly.
 
 Minimum watershed validation:
 
@@ -100,7 +100,7 @@ find "$out/slope_files/flowpaths" -type f -name 'field_*_*.slps' -print -quit | 
 | --- | --- | --- |
 | Panic mentioning missing raster or `unwrap()` | Required input is missing or unreadable. | Check input layout and file permissions. |
 | Panic or failure when representative mode starts | `dem/wbt/discha` is missing or incompatible. | Regenerate WBT distance-to-channel output or run without `--representative-flowpath`. |
-| `watershed/README.md` missing after command exits | Abstraction did not complete successfully or write-stage errors were not surfaced by exit status. | Treat the run as failed; inspect logs and required inputs. |
+| `watershed/README.md` missing after command exits | Abstraction did not complete successfully or output validation found an incomplete run. | Treat the run as failed; inspect logs and required inputs. |
 | `flowpaths.parquet` missing | Flowpaths were skipped or representative mode was used, or full export failed. | Check generated manifest flags; require flowpath output only when `skip_flowpaths=false` and `representative_flowpath=false`. |
 | Process killed by the OS or container runtime | Peak memory exceeded available limits, often during full flowpath expansion/export. | Re-run with `--skip-flowpaths` if consumers do not require flowpaths, or evaluate `--representative-flowpath` for WBT workflows. |
 | Empty or implausible channels/hillslopes | Upstream delineation or network table mismatch. | Revalidate `subwta`, `flovec`, and network inputs before rerunning Peridot. |
@@ -108,9 +108,9 @@ find "$out/slope_files/flowpaths" -type f -name 'field_*_*.slps' -print -quit | 
 
 ## Current Error Boundary
 
-The watershed CLI entrypoints currently discard the underlying abstraction `Result`. Many input failures still produce a panic and non-zero exit, but some propagated write-stage errors may not be reflected in process exit status. Operational automation must validate required outputs after the process returns.
+The watershed CLI entrypoints return the underlying abstraction `io::Result<()>`. Propagated write-stage errors therefore return non-zero. Many missing-input cases still fail by panic because raster and network reads use explicit `unwrap()` calls; those failures also normally return non-zero.
 
-A follow-up runtime hardening package should make `abstract_watershed` and `wbt_abstract_watershed` return non-zero for every abstraction error. Until that lands, missing required outputs are authoritative failure evidence.
+Operational automation should combine process status with the post-run validation checks above. Missing required outputs remain authoritative failure evidence even if a caller did not capture process status.
 
 ## Deployment Notes for WEPPpy
 

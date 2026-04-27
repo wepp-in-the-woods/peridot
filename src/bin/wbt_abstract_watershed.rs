@@ -1,9 +1,9 @@
 extern crate clap;
 
 use clap::Parser;
-use gdal::errors::GdalError;
 use log::info;
 use rayon::ThreadPoolBuilder;
+use std::io;
 use std::path::Path;
 
 use peridot::logging::init_logging;
@@ -52,8 +52,10 @@ struct Opts {
     representative_flowpath: bool,
 }
 
-fn main() -> Result<(), GdalError> {
-    let opts: Opts = Opts::parse();
+fn run_with<F>(opts: Opts, abstraction: F) -> io::Result<()>
+where
+    F: FnOnce(&str, usize, bool, f64, bool, bool, bool) -> io::Result<()>,
+{
     let skip_flowpaths = if opts.representative_flowpath {
         true
     } else {
@@ -77,7 +79,7 @@ fn main() -> Result<(), GdalError> {
         .build_global()
         .unwrap();
 
-    let _ = wbt_abstract_watershed(
+    abstraction(
         &opts.path_to_wd,
         opts.max_points,
         opts.clip_hillslopes,
@@ -85,9 +87,51 @@ fn main() -> Result<(), GdalError> {
         opts.bieger2015_widths,
         !skip_flowpaths,
         opts.representative_flowpath,
-    );
+    )?;
 
     Ok(())
+}
+
+fn main() -> io::Result<()> {
+    run_with(Opts::parse(), wbt_abstract_watershed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_opts() -> Opts {
+        Opts {
+            path_to_wd: std::env::temp_dir()
+                .join("peridot_wbt_abstract_watershed_cli_test")
+                .to_string_lossy()
+                .into_owned(),
+            _version: None,
+            ncpu: 1,
+            max_points: 99,
+            clip_hillslopes: false,
+            clip_hillslope_length: 300.0,
+            bieger2015_widths: false,
+            skip_flowpaths: false,
+            representative_flowpath: false,
+        }
+    }
+
+    #[test]
+    fn propagates_abstraction_errors() {
+        let result = run_with(
+            sample_opts(),
+            |_wd, _max_points, _clip, _length, _bieger, _write, _representative| {
+                Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "write failed",
+                ))
+            },
+        );
+
+        let err = result.expect_err("abstraction error should propagate");
+        assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+    }
 }
 
 // sudo -u www-data BACK_TRACE=1 ./abstract_watershed /geodata/weppcloud_runs/falling-validity/

@@ -218,12 +218,32 @@ Consumers should treat the generated manifest as run-local evidence, not as a re
 | `centroid_lon` | Centroid longitude. |
 | `centroid_lat` | Centroid latitude. |
 
-`field_flowpaths.csv` currently includes two columns named `topaz_id`: the first is the parent hillslope ID and the second is the flowpath record's own topaz ID. Consumers should disambiguate by position until a follow-up schema cleanup is approved.
+`field_flowpaths.csv` columns:
+
+| Column | Meaning |
+| --- | --- |
+| `field_id` | Source field ID from the field-boundary raster. |
+| `topaz_id` | Parent hillslope ID. |
+| `sub_field_id` | Peridot-assigned sub-field ID. |
+| `flowpath_topaz_id` | Topaz ID stored on the sub-field flowpath record. |
+| `fp_id` | Flowpath ID within the sub-field flowpath bundle. |
+| `slope_scalar` | Slope summary. |
+| `length` | Flowpath length. |
+| `width` | Flowpath width. |
+| `direction` | Flow direction summary. |
+| `aspect` | Aspect summary. |
+| `area` | Area in square meters. |
+| `elevation` | Elevation summary. |
+| `order` | Flowpath order. |
+| `centroid_px` | Centroid pixel x coordinate. |
+| `centroid_py` | Centroid pixel y coordinate. |
+| `centroid_lon` | Centroid longitude. |
+| `centroid_lat` | Centroid latitude. |
 
 ## Current Error Boundary
 
 Many missing-input cases fail by panic because raster and network reads use explicit `unwrap()` calls. Those failures normally produce a non-zero process exit.
 
-The current `abstract_watershed` and `wbt_abstract_watershed` CLI entrypoints call the underlying abstraction functions and discard the returned `Result`. This means some write-stage errors can be missed by process exit status alone. Operational callers should validate required outputs and `watershed/README.md` after each run. A follow-up runtime hardening package should make the CLI return non-zero for every propagated abstraction error.
+The `abstract_watershed`, `wbt_abstract_watershed`, and `sub_fields_abstraction` CLI entrypoints return the underlying abstraction `io::Result<()>`. Propagated write-stage errors therefore make the process exit non-zero.
 
-`sub_fields_abstraction` currently returns the underlying `io::Result<()>` from its CLI entrypoint.
+Operational callers should still validate required outputs and generated manifests after each run because a zero exit status only confirms that the command returned success, not that downstream post-processing or deployment-specific expectations were satisfied.

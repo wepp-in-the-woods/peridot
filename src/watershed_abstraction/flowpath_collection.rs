@@ -1311,7 +1311,7 @@ impl FlowpathCollection {
                 "field_id",
                 "topaz_id",
                 "sub_field_id",
-                "topaz_id",
+                "flowpath_topaz_id",
                 "fp_id",
                 "slope_scalar",
                 "length",

@@ -248,10 +248,35 @@ impl<T: Default + Clone> Raster<T> {
     /// # Example
     ///
     /// ```
-    /// // Assuming you've defined Raster and implemented with_mask...
-    /// let raster = Raster::new(...);
-    /// let mask = Raster::<i32>::new(...);
-    /// let masked_raster = raster.with_mask(mask, some_masked_value);
+    /// use peridot::raster::{MapType, Raster};
+    ///
+    /// let raster = Raster::new(
+    ///     2,
+    ///     1,
+    ///     1.0,
+    ///     vec![10, 20],
+    ///     Some(-9999),
+    ///     [0.0, 1.0, 0.0, 0.0, 0.0, -1.0],
+    ///     None,
+    ///     String::new(),
+    ///     String::new(),
+    ///     MapType::OTHER,
+    /// );
+    /// let mask = Raster::new(
+    ///     2,
+    ///     1,
+    ///     1.0,
+    ///     vec![1, 0],
+    ///     Some(-9999),
+    ///     [0.0, 1.0, 0.0, 0.0, 0.0, -1.0],
+    ///     None,
+    ///     String::new(),
+    ///     String::new(),
+    ///     MapType::OTHER,
+    /// );
+    ///
+    /// let masked_raster = raster.from_mask(&mask, -1);
+    /// assert_eq!(masked_raster.data, vec![10, -1]);
     /// ```
     pub fn from_mask(&self, mask: &Raster<i32>, masked_value: T) -> Self {
         // Check dimensions

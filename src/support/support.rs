@@ -47,6 +47,13 @@ pub fn interpolate_slp(
     slopes: &Vec<f64>,
     max_points: usize,
 ) -> Result<(Vec<f64>, Vec<f64>), &'static str> {
+    assert!(!distances.is_empty(), "distances should not be empty");
+    assert!(distances[0] == 0.0, "distances[0] should be 0");
+    assert!(
+        *distances.last().unwrap() == 1.0,
+        "distances[-1] should be 1"
+    );
+
     // Check for the special case where slope is a single cell
     if slopes.len() == 1 {
         return Ok((vec![0.0, 1.0], vec![slopes[0], slopes[0]]));
@@ -83,8 +90,6 @@ pub fn argmax(data: &Vec<f64>) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::File;
-    use std::io::{self, BufRead, BufReader};
 
     #[test]
     fn test_argmax_basic() {
