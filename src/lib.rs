@@ -3,6 +3,7 @@ extern crate lazy_static;
 pub mod logging;
 pub mod rasters;
 pub mod roads_trace;
+pub mod subfield_channel_connectivity;
 pub mod support;
 pub mod topaz;
 pub mod watershed_abstraction;

@@ -20,6 +20,10 @@ path = "src/bin/sub_fields_abstraction.rs"
 name = "trace_downslope_flowpath"
 path = "src/bin/trace_downslope_flowpath.rs"
 
+[[bin]]
+name = "subfield_channel_connectivity"
+path = "src/bin/subfield_channel_connectivity.rs"
+
 [dependencies]
 gdal = {version = "0.16", features = ["bindgen"] }
 gdal-sys = { version = "0.9.1", optional = true }
