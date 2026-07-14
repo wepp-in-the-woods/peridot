@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 
 use serde::Serialize;
@@ -13,6 +13,21 @@ pub struct SubfieldChannelConnectivitySummary {
     pub subfields_with_direct_channel_drainage: usize,
     pub subfields_without_direct_channel_drainage: usize,
     pub direct_channel_outlet_cells: usize,
+}
+
+/// Deterministic routing detail for one retained subfield.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct SubfieldChannelConnectivityDetail {
+    pub subfield_id: i32,
+    pub channel_connected: bool,
+    pub direct_channel_outlet_cells: usize,
+}
+
+/// Aggregate and per-subfield results from one classifier pass.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct SubfieldChannelConnectivityAnalysis {
+    pub summary: SubfieldChannelConnectivitySummary,
+    pub subfields: Vec<SubfieldChannelConnectivityDetail>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,6 +94,16 @@ pub fn summarize_subfield_channel_connectivity(
     flovec: &Raster<u8>,
     channel_mask: Option<&Raster<i32>>,
 ) -> Result<SubfieldChannelConnectivitySummary, SubfieldChannelConnectivityError> {
+    Ok(analyze_subfield_channel_connectivity(sub_field_map, subwta, flovec, channel_mask)?.summary)
+}
+
+/// Analyze direct channel drainage and return one sorted row for every retained subfield.
+pub fn analyze_subfield_channel_connectivity(
+    sub_field_map: &Raster<i32>,
+    subwta: &Raster<i32>,
+    flovec: &Raster<u8>,
+    channel_mask: Option<&Raster<i32>>,
+) -> Result<SubfieldChannelConnectivityAnalysis, SubfieldChannelConnectivityError> {
     validate_raster_grid("subwta", sub_field_map, subwta)?;
     validate_raster_grid("flovec", sub_field_map, flovec)?;
     if let Some(mask) = channel_mask {
@@ -86,7 +111,7 @@ pub fn summarize_subfield_channel_connectivity(
     }
 
     let mut subfield_ids = HashSet::new();
-    let mut directly_connected_subfield_ids = HashSet::new();
+    let mut outlet_cells_by_subfield = BTreeMap::<i32, usize>::new();
     let mut direct_channel_outlet_cells = 0usize;
 
     for (index, &subfield_id) in sub_field_map.data.iter().enumerate() {
@@ -120,20 +145,37 @@ pub fn summarize_subfield_channel_connectivity(
             None => subwta.data[next_index] % 10 == 4,
         };
         if is_channel {
-            directly_connected_subfield_ids.insert(subfield_id);
+            *outlet_cells_by_subfield.entry(subfield_id).or_default() += 1;
             direct_channel_outlet_cells += 1;
         }
     }
 
     let subfields_total = subfield_ids.len();
-    let subfields_with_direct_channel_drainage = directly_connected_subfield_ids.len();
-    Ok(SubfieldChannelConnectivitySummary {
+    let subfields_with_direct_channel_drainage = outlet_cells_by_subfield.len();
+    let summary = SubfieldChannelConnectivitySummary {
         subfields_total,
         subfields_with_direct_channel_drainage,
         subfields_without_direct_channel_drainage: subfields_total
             - subfields_with_direct_channel_drainage,
         direct_channel_outlet_cells,
-    })
+    };
+    let mut sorted_subfield_ids: Vec<_> = subfield_ids.into_iter().collect();
+    sorted_subfield_ids.sort_unstable();
+    let subfields = sorted_subfield_ids
+        .into_iter()
+        .map(|subfield_id| {
+            let direct_channel_outlet_cells = outlet_cells_by_subfield
+                .get(&subfield_id)
+                .copied()
+                .unwrap_or_default();
+            SubfieldChannelConnectivityDetail {
+                subfield_id,
+                channel_connected: direct_channel_outlet_cells > 0,
+                direct_channel_outlet_cells,
+            }
+        })
+        .collect();
+    Ok(SubfieldChannelConnectivityAnalysis { summary, subfields })
 }
 
 fn validate_raster_grid<T, U>(
@@ -225,6 +267,39 @@ mod tests {
         assert_eq!(summary.subfields_with_direct_channel_drainage, 1);
         assert_eq!(summary.subfields_without_direct_channel_drainage, 1);
         assert_eq!(summary.direct_channel_outlet_cells, 2);
+    }
+
+    #[test]
+    fn analysis_returns_sorted_rows_for_connected_and_unconnected_subfields() {
+        let sub_field_map = raster_i32(4, 2, vec![20, 20, 0, 0, 10, 10, 0, 30]);
+        let subwta = raster_i32(4, 2, vec![31, 31, 31, 31, 11, 11, 14, 31]);
+        let flovec = raster_u8(4, 2, vec![6, 6, 0, 0, 6, 6, 0, 0]);
+
+        let analysis =
+            analyze_subfield_channel_connectivity(&sub_field_map, &subwta, &flovec, None)
+                .expect("connectivity analysis failed");
+
+        assert_eq!(
+            analysis.subfields,
+            vec![
+                SubfieldChannelConnectivityDetail {
+                    subfield_id: 10,
+                    channel_connected: true,
+                    direct_channel_outlet_cells: 1,
+                },
+                SubfieldChannelConnectivityDetail {
+                    subfield_id: 20,
+                    channel_connected: false,
+                    direct_channel_outlet_cells: 0,
+                },
+                SubfieldChannelConnectivityDetail {
+                    subfield_id: 30,
+                    channel_connected: false,
+                    direct_channel_outlet_cells: 0,
+                },
+            ]
+        );
+        assert_eq!(analysis.summary.subfields_total, analysis.subfields.len());
     }
 
     #[test]

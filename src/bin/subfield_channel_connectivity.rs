@@ -4,11 +4,13 @@ use clap::Parser;
 use serde::Serialize;
 use std::error::Error;
 use std::fs;
+use std::path::Path;
 
 use peridot::d8_wbt_to_topaz::remap_whitebox_d8_to_topaz_in_place;
 use peridot::raster::Raster;
 use peridot::subfield_channel_connectivity::{
-    summarize_subfield_channel_connectivity, SubfieldChannelConnectivitySummary,
+    analyze_subfield_channel_connectivity, SubfieldChannelConnectivityDetail,
+    SubfieldChannelConnectivitySummary,
 };
 
 const DEFINITION: &str = "A retained subfield has direct channel drainage when the first cell outside at least one generated per-cell flowpath is a channel cell. Peridot starts one flowpath at every retained subfield cell and stops after appending its first cell outside the subfield.";
@@ -40,6 +42,10 @@ struct Opts {
     #[arg(long)]
     out_json: Option<String>,
 
+    /// Optional versioned per-subfield routing detail JSON path
+    #[arg(long)]
+    out_subfields_json: Option<String>,
+
     /// Show version information and exit
     #[clap(short = 'v', long = "version", action = clap::ArgAction::Version, short_alias = 'V')]
     _version: Option<bool>,
@@ -62,6 +68,34 @@ struct ConnectivityReport<'a> {
     metrics: SubfieldChannelConnectivitySummary,
 }
 
+#[derive(Serialize)]
+struct SubfieldConnectivityReport<'a> {
+    schema_version: u8,
+    peridot_version: &'static str,
+    definition: &'static str,
+    channel_detection: &'static str,
+    inputs: InputResources<'a>,
+    metrics: SubfieldChannelConnectivitySummary,
+    subfields: Vec<SubfieldChannelConnectivityDetail>,
+}
+
+fn write_atomic(path: &Path, contents: &str) -> Result<(), Box<dyn Error>> {
+    let file_name = path.file_name().ok_or("output path has no file name")?;
+    let temporary = path.with_file_name(format!(
+        ".{}.{}.tmp",
+        file_name.to_string_lossy(),
+        std::process::id()
+    ));
+    fs::write(&temporary, contents)?;
+    match fs::rename(&temporary, path) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            let _ = fs::remove_file(&temporary);
+            Err(error.into())
+        }
+    }
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let opts = Opts::parse();
 
@@ -75,7 +109,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .map(Raster::<i32>::read)
         .transpose()?;
 
-    let metrics = summarize_subfield_channel_connectivity(
+    let analysis = analyze_subfield_channel_connectivity(
         &sub_field_map,
         &subwta,
         &flovec,
@@ -96,14 +130,33 @@ fn main() -> Result<(), Box<dyn Error>> {
             wbt_flovec: &opts.wbt_flovec,
             channel_mask: opts.channel_mask.as_deref(),
         },
-        metrics,
+        metrics: analysis.summary.clone(),
     };
 
     let json = serde_json::to_string_pretty(&report)?;
     if let Some(path) = opts.out_json {
-        fs::write(path, format!("{}\n", json))?;
+        write_atomic(Path::new(&path), &format!("{}\n", json))?;
     } else {
         println!("{}", json);
+    }
+
+    if let Some(path) = opts.out_subfields_json {
+        let detail_report = SubfieldConnectivityReport {
+            schema_version: 1,
+            peridot_version: env!("PERIDOT_VERSION_STRING"),
+            definition: DEFINITION,
+            channel_detection,
+            inputs: InputResources {
+                sub_field_map: &opts.sub_field_map,
+                subwta: &opts.subwta,
+                wbt_flovec: &opts.wbt_flovec,
+                channel_mask: opts.channel_mask.as_deref(),
+            },
+            metrics: analysis.summary,
+            subfields: analysis.subfields,
+        };
+        let json = serde_json::to_string_pretty(&detail_report)?;
+        write_atomic(Path::new(&path), &format!("{}\n", json))?;
     }
 
     Ok(())
