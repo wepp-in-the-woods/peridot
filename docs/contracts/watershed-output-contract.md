@@ -247,3 +247,11 @@ Many missing-input cases fail by panic because raster and network reads use expl
 The `abstract_watershed`, `wbt_abstract_watershed`, and `sub_fields_abstraction` CLI entrypoints return the underlying abstraction `io::Result<()>`. Propagated write-stage errors therefore make the process exit non-zero.
 
 Operational callers should still validate required outputs and generated manifests after each run because a zero exit status only confirms that the command returned success, not that downstream post-processing or deployment-specific expectations were satisfied.
+
+## Centroid coordinate authority
+
+All hillslope, channel, flowpath, and sub-field Parquet/CSV geographic centroids must be computed by applying the source raster's full six-coefficient affine geotransform to the stored integer centroid pixel indices, then transforming each projected point from the raster CRS to WGS84 longitude/latitude in degrees. Preserve the existing pixel-corner convention: no implicit half-cell offset. Two-corner geographic interpolation is not authoritative.
+
+Each metadata writer initializes and reuses its own PROJ transformer. Missing/invalid CRS, failed conversion, or nonfinite output must return an explicit writer error; never fall back to approximate coordinates. Column names/types, identifiers, pixel centroids, slope geometry, and raster sampling policy remain unchanged. Existing saved coordinates require explicit regeneration; this correction does not migrate runs automatically.
+
+Rationale: UTM-to-geographic conversion couples both axes and is nonlinear. The former independent-axis approximation displaced seductive-sabra centroids by hundreds of meters and sampled incorrect bedrock conductivity classes.
