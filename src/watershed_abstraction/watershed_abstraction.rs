@@ -137,7 +137,7 @@ pub fn abstract_watershed(
         Box::new(|| channels.write_channel_slp("watershed/slope_files/channels.slp", max_points)),
         Box::new(|| {
             channels
-                .write_chn_metadata_to_parquet("watershed/channels.parquet", &subwta.wgs_transform)
+                .write_chn_metadata_to_parquet("watershed/channels.parquet", &subwta)
         }),
         Box::new(|| {
             hillslopes.write_slps(
@@ -149,7 +149,7 @@ pub fn abstract_watershed(
         }),
         Box::new(|| {
             hillslopes
-                .write_metadata_to_parquet("watershed/hillslopes.parquet", &subwta.wgs_transform)
+                .write_metadata_to_parquet("watershed/hillslopes.parquet", &subwta)
         }),
         Box::new(|| channels.write_geojson(&subwta, "watershed/channels.geojson")),
     ];
@@ -171,7 +171,7 @@ pub fn abstract_watershed(
     if write_flowpaths {
         hillslopes.write_subflows_metadata_to_parquet(
             "watershed/flowpaths.parquet",
-            &subwta.wgs_transform,
+            &subwta,
         )?;
     }
 

@@ -10,6 +10,21 @@ use peridot::watershed_abstraction::{
     FlowpathCollection, ManifestRunFlags,
 };
 
+fn metadata_raster() -> peridot::raster::Raster<i32> {
+    peridot::raster::Raster::new(
+        100,
+        100,
+        0.0001,
+        vec![],
+        None,
+        [-117.0, 0.0001, 0.0, 46.0, 0.0, -0.0001],
+        Some("EPSG:4326".to_string()),
+        String::new(),
+        String::new(),
+        peridot::raster::MapType::SUBWTA,
+    )
+}
+
 fn unique_temp_dir(label: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -103,24 +118,24 @@ fn writes_watershed_parquet_outputs() {
     fs::create_dir_all(&watershed_dir).expect("failed to create watershed dir");
 
     let (channels, hillslopes) = build_collections();
-    let wgs_transform = [-117.0, 46.0, 0.0001, 0.0001];
+    let raster = metadata_raster();
 
     channels
         .write_chn_metadata_to_parquet(
             watershed_dir.join("channels.parquet").to_str().unwrap(),
-            &wgs_transform,
+            &raster,
         )
         .expect("failed writing channels parquet");
     hillslopes
         .write_metadata_to_parquet(
             watershed_dir.join("hillslopes.parquet").to_str().unwrap(),
-            &wgs_transform,
+            &raster,
         )
         .expect("failed writing hillslopes parquet");
     hillslopes
         .write_subflows_metadata_to_parquet(
             watershed_dir.join("flowpaths.parquet").to_str().unwrap(),
-            &wgs_transform,
+            &raster,
         )
         .expect("failed writing flowpaths parquet");
 
@@ -151,24 +166,24 @@ fn writes_watershed_readme_manifest_with_flags_and_schema() {
         .expect("failed to create slope dir");
 
     let (channels, hillslopes) = build_collections();
-    let wgs_transform = [-117.0, 46.0, 0.0001, 0.0001];
+    let raster = metadata_raster();
 
     channels
         .write_chn_metadata_to_parquet(
             watershed_dir.join("channels.parquet").to_str().unwrap(),
-            &wgs_transform,
+            &raster,
         )
         .expect("failed writing channels parquet");
     hillslopes
         .write_metadata_to_parquet(
             watershed_dir.join("hillslopes.parquet").to_str().unwrap(),
-            &wgs_transform,
+            &raster,
         )
         .expect("failed writing hillslopes parquet");
     hillslopes
         .write_subflows_metadata_to_parquet(
             watershed_dir.join("flowpaths.parquet").to_str().unwrap(),
-            &wgs_transform,
+            &raster,
         )
         .expect("failed writing flowpaths parquet");
 
@@ -239,18 +254,18 @@ fn writes_watershed_readme_conditional_notes_for_skip_and_representative_modes()
         .expect("failed to create slope dir");
 
     let (channels, hillslopes) = build_collections();
-    let wgs_transform = [-117.0, 46.0, 0.0001, 0.0001];
+    let raster = metadata_raster();
 
     channels
         .write_chn_metadata_to_parquet(
             watershed_dir.join("channels.parquet").to_str().unwrap(),
-            &wgs_transform,
+            &raster,
         )
         .expect("failed writing channels parquet");
     hillslopes
         .write_metadata_to_parquet(
             watershed_dir.join("hillslopes.parquet").to_str().unwrap(),
-            &wgs_transform,
+            &raster,
         )
         .expect("failed writing hillslopes parquet");
 

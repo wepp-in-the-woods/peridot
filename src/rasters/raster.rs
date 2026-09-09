@@ -53,6 +53,53 @@ fn transform_coords(
     Ok(transformer.convert((x, y))?)
 }
 
+/// Exact pixel-to-geographic conversion, owned by a single metadata writer.
+/// Pixel indices retain the existing corner-based affine convention.
+pub struct PixelToWgs84 {
+    geo_transform: [f64; 6],
+    projector: Proj,
+}
+
+impl PixelToWgs84 {
+    pub fn new(geo_transform: [f64; 6], source_crs: &str) -> std::io::Result<Self> {
+        if source_crs.trim().is_empty() || !geo_transform.iter().all(|v| v.is_finite()) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "centroid projection requires a CRS and finite geotransform",
+            ));
+        }
+        let projector = Proj::new_known_crs(source_crs, "EPSG:4326", None).map_err(|err| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("cannot initialize centroid projection from {source_crs}: {err}"),
+            )
+        })?;
+        Ok(Self {
+            geo_transform,
+            projector,
+        })
+    }
+
+    pub fn convert(&self, px: i32, py: i32) -> std::io::Result<(f64, f64)> {
+        let gt = self.geo_transform;
+        let x = gt[0] + f64::from(px) * gt[1] + f64::from(py) * gt[2];
+        let y = gt[3] + f64::from(px) * gt[4] + f64::from(py) * gt[5];
+        let (lon, lat) = self.projector.convert((x, y)).map_err(|err| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("cannot project centroid pixel ({px}, {py}) at ({x}, {y}): {err}"),
+            )
+        })?;
+        if !lon.is_finite() || !lat.is_finite() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("nonfinite geographic centroid for pixel ({px}, {py})"),
+            ));
+        }
+        Ok((lon, lat))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum MapType {
     BOUND,
@@ -766,6 +813,16 @@ impl ToIndices for Vec<usize> {
 }
 
 impl<T> Raster<T> {
+    pub fn centroid_projector(&self) -> std::io::Result<PixelToWgs84> {
+        let source_crs = self.proj4.as_deref().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "centroid projection requires the source raster CRS",
+            )
+        })?;
+        PixelToWgs84::new(self.geo_transform, source_crs)
+    }
+
     #[allow(dead_code)]
     pub fn centroid_of<I: ToIndices>(&self, indices: &I) -> (usize, usize) {
         let indices_vec = indices.to_indices();

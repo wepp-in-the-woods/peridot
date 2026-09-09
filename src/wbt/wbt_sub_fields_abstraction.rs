@@ -266,6 +266,7 @@ pub fn wbt_sub_fields_abstraction(
     log_flowpath_collection_stats("sub-fields", &hillslopes);
     let fake_topaz_id_lookup = Arc::new(fake_topaz_id_lookup);
 
+    let metadata_raster = &subwta;
     let tasks: Vec<Box<dyn FnOnce() -> Result<()> + Send>> = vec![
         {
             let lookup = Arc::clone(&fake_topaz_id_lookup);
@@ -292,7 +293,7 @@ pub fn wbt_sub_fields_abstraction(
                 info!("writing fields.csv to {}", csv_path);
                 let result = hillslopes.write_field_metadata_to_csv(
                     &csv_path,
-                    &subwta.wgs_transform,
+                    metadata_raster,
                     lookup.as_ref(),
                 );
                 info!("wrote fields.csv to {}", csv_path);
@@ -307,7 +308,7 @@ pub fn wbt_sub_fields_abstraction(
                 info!("writing field_flowpaths.csv to {}", csv_path);
                 let result = hillslopes.write_field_subflows_metadata_to_csv(
                     &csv_path,
-                    &subwta.wgs_transform,
+                    metadata_raster,
                     lookup.as_ref(),
                 );
                 info!("wrote field_flowpaths.csv to {}", csv_path);

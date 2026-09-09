@@ -290,7 +290,7 @@ pub fn wbt_abstract_watershed(
         Box::new(|| {
             info!("writing channels.parquet");
             let result = channels
-                .write_chn_metadata_to_parquet("watershed/channels.parquet", &subwta.wgs_transform);
+                .write_chn_metadata_to_parquet("watershed/channels.parquet", &subwta);
             info!("wrote channels.parquet");
             result
         }),
@@ -308,7 +308,7 @@ pub fn wbt_abstract_watershed(
         Box::new(|| {
             info!("writing hillslopes.parquet");
             let result = hillslopes
-                .write_metadata_to_parquet("watershed/hillslopes.parquet", &subwta.wgs_transform);
+                .write_metadata_to_parquet("watershed/hillslopes.parquet", &subwta);
             info!("wrote hillslopes.parquet");
             result
         }),
@@ -342,7 +342,7 @@ pub fn wbt_abstract_watershed(
         info!("writing flowpaths.parquet");
         hillslopes.write_subflows_metadata_to_parquet(
             "watershed/flowpaths.parquet",
-            &subwta.wgs_transform,
+            &subwta,
         )?;
         info!("wrote flowpaths.parquet");
     }

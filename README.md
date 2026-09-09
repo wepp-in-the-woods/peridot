@@ -242,3 +242,7 @@ peridot/src
 ├── watershed_abstraction
 └── wbt
 ```
+
+## Geographic centroid accuracy
+
+Metadata exports transform each stored pixel centroid through the raster affine transform and source CRS into WGS84 longitude/latitude. This replaces the former two-corner approximation, which could displace map sampling by hundreds of meters. Existing saved outputs need regeneration; see [centroid authority](docs/contracts/watershed-output-contract.md#centroid-coordinate-authority) and [operations](docs/operations.md#centroid-projection-release-and-existing-runs).

@@ -14,7 +14,7 @@ use serde_json::to_string_pretty;
 
 use crate::douglas_peucker::douglas_peucker;
 use crate::flowpath::Flowpath;
-use crate::raster::{px_to_wgs, Raster};
+use crate::raster::Raster;
 use crate::support::interpolate_slp;
 use crate::watershed_abstraction::PATHS;
 
@@ -832,8 +832,9 @@ impl FlowpathCollection {
     pub fn write_chn_metadata_to_parquet(
         &self,
         path: &str,
-        wgs_transform: &[f64; 4],
+        raster: &Raster<i32>,
     ) -> std::io::Result<()> {
+        let projector = raster.centroid_projector()?;
         let mut topaz_ids: Vec<i32> = Vec::with_capacity(self.flowpaths.len());
         let mut slope_scalars: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
         let mut lengths: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
@@ -849,7 +850,7 @@ impl FlowpathCollection {
         let mut centroid_lat: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
 
         for fp in &self.flowpaths {
-            let (lon, lat) = px_to_wgs(wgs_transform, fp.centroid_px.0, fp.centroid_px.1);
+            let (lon, lat) = projector.convert(fp.centroid_px.0, fp.centroid_px.1)?;
             topaz_ids.push(fp.topaz_id);
             slope_scalars.push(fp.slope_scalar);
             lengths.push(fp.length);
@@ -906,8 +907,9 @@ impl FlowpathCollection {
     pub fn write_metadata_to_parquet(
         &self,
         path: &str,
-        wgs_transform: &[f64; 4],
+        raster: &Raster<i32>,
     ) -> std::io::Result<()> {
+        let projector = raster.centroid_projector()?;
         let mut topaz_ids: Vec<i32> = Vec::with_capacity(self.flowpaths.len());
         let mut slope_scalars: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
         let mut lengths: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
@@ -925,7 +927,7 @@ impl FlowpathCollection {
         let mut centroid_lat: Vec<f64> = Vec::with_capacity(self.flowpaths.len());
 
         for fp in &self.flowpaths {
-            let (lon, lat) = px_to_wgs(wgs_transform, fp.centroid_px.0, fp.centroid_px.1);
+            let (lon, lat) = projector.convert(fp.centroid_px.0, fp.centroid_px.1)?;
             topaz_ids.push(fp.topaz_id);
             slope_scalars.push(fp.slope_scalar);
             lengths.push(fp.length);
@@ -988,8 +990,9 @@ impl FlowpathCollection {
     pub fn write_subflows_metadata_to_parquet(
         &self,
         path: &str,
-        wgs_transform: &[f64; 4],
+        raster: &Raster<i32>,
     ) -> std::io::Result<()> {
+        let projector = raster.centroid_projector()?;
         let mut topaz_ids: Vec<i32> = Vec::new();
         let mut fp_ids: Vec<i32> = Vec::new();
         let mut slope_scalars: Vec<f64> = Vec::new();
@@ -1008,7 +1011,7 @@ impl FlowpathCollection {
         if let Some(subflows_map) = &self.subflows {
             for (topaz_id, subflow_collection) in subflows_map {
                 for fp in &subflow_collection.flowpaths {
-                    let (lon, lat) = px_to_wgs(wgs_transform, fp.centroid_px.0, fp.centroid_px.1);
+                    let (lon, lat) = projector.convert(fp.centroid_px.0, fp.centroid_px.1)?;
                     topaz_ids.push(*topaz_id);
                     fp_ids.push(fp.fp_id);
                     slope_scalars.push(fp.slope_scalar);
@@ -1072,8 +1075,9 @@ impl FlowpathCollection {
     pub fn write_chn_metadata_to_csv(
         &self,
         path: &str,
-        wgs_transform: &[f64; 4],
+        raster: &Raster<i32>,
     ) -> std::io::Result<()> {
+        let projector = raster.centroid_projector()?;
         let file = File::create(path).unwrap();
         let mut writer = csv::Writer::from_writer(file);
 
@@ -1096,7 +1100,7 @@ impl FlowpathCollection {
         writer.write_record(headers).unwrap();
 
         for fp in &self.flowpaths {
-            let (lon, lat) = px_to_wgs(wgs_transform, fp.centroid_px.0, fp.centroid_px.1);
+            let (lon, lat) = projector.convert(fp.centroid_px.0, fp.centroid_px.1)?;
 
             let record: Vec<String> = vec![
                 fp.topaz_id.to_string(),
@@ -1124,8 +1128,9 @@ impl FlowpathCollection {
     pub fn write_metadata_to_csv(
         &self,
         path: &str,
-        wgs_transform: &[f64; 4],
+        raster: &Raster<i32>,
     ) -> std::io::Result<()> {
+        let projector = raster.centroid_projector()?;
         let file = File::create(path).unwrap();
         let mut writer = csv::Writer::from_writer(file);
 
@@ -1150,7 +1155,7 @@ impl FlowpathCollection {
         writer.write_record(headers).unwrap();
 
         for fp in &self.flowpaths {
-            let (lon, lat) = px_to_wgs(wgs_transform, fp.centroid_px.0, fp.centroid_px.1);
+            let (lon, lat) = projector.convert(fp.centroid_px.0, fp.centroid_px.1)?;
 
             let record: Vec<String> = vec![
                 fp.topaz_id.to_string(),
@@ -1180,9 +1185,10 @@ impl FlowpathCollection {
     pub fn write_field_metadata_to_csv(
         &self,
         path: &str,
-        wgs_transform: &[f64; 4],
+        raster: &Raster<i32>,
         fake_topaz_id_lookup: &HashMap<(i32, i32), i32>,
     ) -> std::io::Result<()> {
+        let projector = raster.centroid_projector()?;
         let file = File::create(path).unwrap();
         let mut writer = csv::Writer::from_writer(file);
 
@@ -1209,7 +1215,7 @@ impl FlowpathCollection {
             if let Some((field_id, topaz_id)) =
                 Self::resolve_field_lookup(fp.topaz_id, fake_topaz_id_lookup)
             {
-                let (lon, lat) = px_to_wgs(wgs_transform, fp.centroid_px.0, fp.centroid_px.1);
+                let (lon, lat) = projector.convert(fp.centroid_px.0, fp.centroid_px.1)?;
 
                 let record = [
                     field_id.to_string(),
@@ -1239,8 +1245,9 @@ impl FlowpathCollection {
     pub fn write_subflows_metadata_to_csv(
         &self,
         path: &str,
-        wgs_transform: &[f64; 4],
+        raster: &Raster<i32>,
     ) -> std::io::Result<()> {
+        let projector = raster.centroid_projector()?;
         let file = File::create(path).unwrap();
         let mut writer = csv::Writer::from_writer(file);
 
@@ -1266,7 +1273,7 @@ impl FlowpathCollection {
         if let Some(subflows_map) = &self.subflows {
             for (topaz_id, subflow_collection) in subflows_map {
                 for fp in subflow_collection.flowpaths.iter() {
-                    let (lon, lat) = px_to_wgs(wgs_transform, fp.centroid_px.0, fp.centroid_px.1);
+                    let (lon, lat) = projector.convert(fp.centroid_px.0, fp.centroid_px.1)?;
 
                     let record: Vec<String> = vec![
                         topaz_id.to_string(),
@@ -1300,9 +1307,10 @@ impl FlowpathCollection {
     pub fn write_field_subflows_metadata_to_csv(
         &self,
         path: &str,
-        wgs_transform: &[f64; 4],
+        raster: &Raster<i32>,
         fake_topaz_id_lookup: &HashMap<(i32, i32), i32>,
     ) -> std::io::Result<()> {
+        let projector = raster.centroid_projector()?;
         let file = File::create(path).unwrap();
         let mut writer = csv::Writer::from_writer(file);
 
@@ -1335,7 +1343,7 @@ impl FlowpathCollection {
                 {
                     for fp in &subflow_collection.flowpaths {
                         let (lon, lat) =
-                            px_to_wgs(wgs_transform, fp.centroid_px.0, fp.centroid_px.1);
+                            projector.convert(fp.centroid_px.0, fp.centroid_px.1)?;
 
                         let record = [
                             field_id.to_string(),

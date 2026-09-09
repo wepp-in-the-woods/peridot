@@ -5,6 +5,21 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use peridot::watershed_abstraction::{Flowpath, FlowpathCollection};
 
+fn metadata_raster() -> peridot::raster::Raster<i32> {
+    peridot::raster::Raster::new(
+        100,
+        100,
+        0.0001,
+        vec![],
+        None,
+        [-117.0, 0.0001, 0.0, 46.0, 0.0, -0.0001],
+        Some("EPSG:4326".to_string()),
+        String::new(),
+        String::new(),
+        peridot::raster::MapType::SUBWTA,
+    )
+}
+
 fn unique_temp_dir(label: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -66,7 +81,7 @@ fn field_flowpaths_csv_headers_are_unique_and_explicit() {
     collection
         .write_field_subflows_metadata_to_csv(
             csv_path.to_str().unwrap(),
-            &[-117.0, 46.0, 0.1, 0.1],
+            &metadata_raster(),
             &lookup,
         )
         .expect("failed to write field flowpaths csv");

@@ -137,3 +137,11 @@ Escalate to a runtime package, not a docs-only patch, when any of these are requ
 - adding new required outputs,
 - changing deletion/mutation behavior for output directories,
 - altering WEPPpy orchestration or queue behavior.
+
+## Centroid projection release and existing runs
+
+The 2026-09-09 centroid correction replaces two-corner geographic interpolation in all metadata exports with per-point PROJ conversion. Rebuild and vendor `abstract_watershed`, `wbt_abstract_watershed`, and `sub_fields_abstraction` together. The integer pixel/corner convention and schemas are unchanged. Reuse the existing PROJ/GDAL runtime dependencies.
+
+Saved run tables are not migrated by installing binaries. Before repairing a run, preserve the previous metadata and generated inputs, regenerate abstraction through the normal workflow, and rebuild dependent location-based inputs (including WEPP soil preparation). Compare exported longitude/latitude against the source raster affine transform plus an independent CRS transformation. A successful binary invocation alone does not repair existing model inputs.
+
+For the Portland incident, the raster sampler's separate corner-rounding behavior is not changed by this release. Never compensate for centroid displacement by changing bedrock raster classes.
