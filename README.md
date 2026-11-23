@@ -189,7 +189,7 @@ Key options:
 - `--ncpu` sets the Rayon thread pool size.
 - `--max-points` caps generated WEPP slope profile point counts.
 - `--clip-hillslopes` and `--clip-hillslope-length` clip hillslope slope profiles to a maximum physical length.
-- `--bieger2015-widths` uses the Bieger 2015 regressions to infer channel widths from drainage area.
+- `--bieger2015-widths` uses cumulative drainage area entering the upstream node (excluding the node cell) for the Rocky Mountain Bieger 2015 width regression. Regenerate legacy WBT network tables before rebuilding channel inputs.
 - `--skip-flowpaths` omits full flowpath table and `.slps` exports for watershed abstraction.
 - `--representative-flowpath` uses a single WBT representative path per hillslope and forces `--skip-flowpaths` behavior.
 - `--sub-field-min-area-threshold-m2` drops field/subcatchment intersections smaller than the specified area.
