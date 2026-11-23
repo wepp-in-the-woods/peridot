@@ -19,6 +19,7 @@ pub struct Link {
     pub us_z: f64,
     pub drop_m: f64,
     pub order: i32,
+    /// Cumulative contributing area at the upstream node (m²), excluding the node cell.
     pub areaup: f64,
     pub is_headwater: bool,
     pub is_outlet: bool,
